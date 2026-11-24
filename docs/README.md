@@ -1,6 +1,6 @@
 # Verdandi documentation
 
-Verdandi is a reusable Rust audio engine for deterministic, layered procedural music and host-provided sound effects. This directory is the user-facing guide to integrating and operating the library. You should not need to inspect the source tree to learn the supported workflows.
+Verdandi is a reusable Rust game-audio engine for deterministic procedural music, gameplay-oriented sound generation, and host-provided sound effects. This directory is the user-facing guide to integrating and operating the library. You should not need to inspect the source tree to learn the supported workflows.
 
 ## Choose a guide
 
@@ -8,6 +8,7 @@ Verdandi is a reusable Rust audio engine for deterministic, layered procedural m
 |---|---|
 | [Getting started](getting-started.md) | Installation, feature flags, first render, and example commands |
 | [Procedural music](procedural-music.md) | Presets, seeds, musical themes, layers, intensity, transitions, and stingers |
+| [Procedural sound generation](procedural-audio.md) | Deterministic procedural effects and continuous ambience generators |
 | [Sound effects and ambience](sound-effects.md) | PCM clips, one-shots, keyed loops, buses, streaming, errors, and ownership |
 | [SFZ instruments](sfz-instruments.md) | Loading sample libraries, supported WAV formats, patch limitations, and layer assignment |
 | [Bevy integration](bevy-integration.md) | Bevy 0.20 plugin setup, resources, gameplay control, and unified audio buses |
@@ -27,6 +28,6 @@ Verdandi is a reusable Rust audio engine for deterministic, layered procedural m
 - **Procedural instruments:** work without downloaded sample libraries.
 - **Optional SFZ instruments:** load external SFZ patches and their supported WAV samples before audio rendering begins.
 
-Verdandi does not provide an asset catalogue or a general-purpose file decoder for game audio. The host owns its assets and decoding pipeline. Verdandi owns composition, prepared sample playback, mixing, stream buffering, routing, and the real-time playback rules described in these guides.
+Verdandi provides reusable gameplay sound concepts without depending on a particular game's entities, event system, or world simulation. It does not provide an asset catalogue or a general-purpose file decoder for game audio. The host owns its assets and decoding pipeline. Verdandi owns composition, procedural sound generation, prepared sample playback, mixing, stream buffering, routing, and the real-time playback rules described in these guides.
 
 When a guide and the compiled Rust API disagree, treat the API exposed by the current crate version as authoritative and report the documentation discrepancy.

@@ -4,18 +4,19 @@ Instructions for AI agents contributing to **Verdandi**.
 
 ## 1. Project identity and priorities
 
-Verdandi is a deterministic, seed-driven music engine for games, written in Rust. It provides layered procedural composition and synthesis, optional SFZ sample instruments, an engine-agnostic renderer, and an optional Bevy 0.20 integration.
+Verdandi is a reusable game-audio engine written in Rust. It provides deterministic, seed-driven procedural music; procedural sound-effect and environmental-audio generation; host-provided PCM playback and streaming; optional SFZ sample instruments; an engine-independent core; and an optional Bevy 0.20 integration.
 
 Its priorities are:
 
-- Reproducible musical output: the same seed and configuration must produce the same musical events and rendering behaviour.
+- Reproducible musical and sound-effect output: the same seed, configuration, and render sequence must produce the same result.
 - Musically coherent, expressive layers and presets rather than merely random note generation.
+- Useful, game-oriented sound capabilities such as weapons, impacts, clashes, material response, character actions, destruction, and environmental ambience.
 - A reliable real-time audio path suitable for integration into games.
 - A useful engine-independent core, with Bevy integration kept optional.
 - Procedural instruments by default, with user-provided sample libraries as an optional enhancement.
 - A small, maintainable crate with clear public APIs.
 
-Do not turn Verdandi into a game-specific music system or make its core depend on a particular host game's architecture.
+Game-audio concepts are first-class library concerns, not out of scope. Build reusable generators and APIs for common gameplay sounds when they belong in an audio engine. Keep Verdandi independent of any particular game's entities, event identifiers, combat rules, world simulation, asset catalogue, or application architecture.
 
 ## 2. Documentation authority
 
@@ -87,7 +88,7 @@ Respect the separation between the composition engine, synthesis/rendering, and 
 
 Performance-sensitive changes must be considered in terms of worst-case callback behaviour, not only average performance.
 
-## 7. Determinism and musical behaviour
+## 7. Determinism and generated audio behaviour
 
 Determinism is a core contract, not an incidental implementation detail.
 
@@ -96,7 +97,8 @@ Determinism is a core contract, not an incidental implementation detail.
 - Keep independent layers or events isolated from unrelated random-stream consumption where the existing design requires it.
 - Preserve repeatability for identical seeds, presets, pace, overrides, and configuration.
 - Make intentional changes to generated musical output explicit and cover them with appropriate tests.
-- Preserve musical coherence, phrase structure, and preset identity when extending generators.
+- Preserve musical coherence, phrase structure, and preset identity when extending music generators.
+- For sound effects, use stable seeded variation and meaningful sound-design controls; avoid coupling generation to unrelated event or entity state.
 - Respect loop/bar boundaries and documented transition behaviour unless the requested change intentionally revises them.
 
 Do not silently alter existing preset character or deterministic output while making an unrelated fix.

@@ -1,6 +1,6 @@
 # Verdandi
 
-Verdandi is a reusable Rust audio engine for games. It combines deterministic, seed-driven procedural music with an engine-independent mixer for host-provided sound effects and environmental ambience.
+Verdandi is a reusable Rust game-audio engine. It combines deterministic, seed-driven procedural music and game-oriented sound generation with an engine-independent mixer for host-provided effects and environmental ambience.
 
 Music is generated at runtime by default; no recorded music library is required. Optional SFZ instruments can add recorded timbres using sample libraries supplied by the application. The same seed and configuration reproduce the same musical decisions.
 
@@ -10,11 +10,12 @@ Music is generated at runtime by default; no recorded music library is required.
 - Layered four-bar composition, seeded theme selection, automatic or manual intensity, and per-layer controls.
 - Runtime seed and preset changes, crossfades, transport pause/resume, gain controls, and synthesized stingers.
 - Optional SFZ parsing and sample playback, with procedural fallback for unmatched notes.
+- Deterministic procedural wind, rain, footsteps, and impacts, rendered into caller-owned PCM buffers; further game-audio families such as weapon clashes, material impacts, character actions, and destruction are planned.
 - One-shot effects, persistent keyed loops, fades, independent music/effects/ambience buses, and voice limits.
 - Bounded decoded-PCM streaming for long effects and environmental audio.
 - An engine-independent core with an optional Bevy 0.20 integration.
 
-Verdandi does not own a game's asset catalogue or provide a general-purpose decoder for game audio. The host loads and decodes its own assets. Verdandi handles composition, prepared PCM playback, mixing, routing, stream buffering, and real-time playback.
+Verdandi provides reusable game-audio concepts and generators without depending on a particular game's entities, event system, world simulation, or asset catalogue. The host loads and decodes its own assets. Verdandi handles composition, procedural sound generation, prepared PCM playback, mixing, routing, stream buffering, and real-time playback.
 
 ## Quick start
 
@@ -54,7 +55,7 @@ Start with the [documentation index](docs/README.md). It contains integration gu
 
 - [Getting started](docs/getting-started.md)
 - [Procedural music](docs/procedural-music.md)
-- [Sound effects and ambience](docs/sound-effects.md)
+- [Procedural sound generation](docs/procedural-audio.md) · [Sound effects and ambience](docs/sound-effects.md)
 - [SFZ instruments](docs/sfz-instruments.md)
 - [Bevy integration](docs/bevy-integration.md)
 - [Custom audio hosts](docs/custom-audio-hosts.md)
