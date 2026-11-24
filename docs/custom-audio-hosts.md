@@ -16,6 +16,7 @@ let mut engine = Engine::new(shared.clone(), &config);
 
 // In the host's callback, fill an even-length f32 slice.
 // Samples are interleaved stereo: L, R, L, R, ...
+let mut output = [0.0_f32; 128 * 2];
 engine.render_interleaved(&mut output);
 ~~~
 
@@ -28,7 +29,8 @@ Use one sound controller and create its one mixer before starting the callback. 
 ~~~rust
 use std::sync::Arc;
 use verdandi::prelude::{
-    Engine, MusicConfig, MusicShared, SoundController, SoundMixerConfig,
+    Engine, MusicConfig, MusicShared, SoundController, SoundMixer,
+    SoundMixerConfig,
 };
 
 let config = MusicConfig::default();
@@ -84,7 +86,7 @@ fn play_effect(
 }
 ~~~
 
-Sound submission is non-blocking. It can return **QueueFull** or **ProducerBusy**; handle these on the control/worker side and retry when appropriate. The host must not wait, decode, allocate, or perform file access in its real-time callback.
+Sound submission is non-blocking. It can return **QueueFull** or **ProducerBusy**; handle these on the control/worker side and retry when appropriate. The host must not wait, decode, allocate, or perform file access in its real-time callback. Verdandi also performs arrangement generation at loop boundaries and prepares a new engine when a preset transition is processed. Those operations are part of the current renderer's callback workload; budget and profile callback deadlines around loop boundaries and preset changes rather than assuming the entire engine is strictly allocation-free.
 
 ## Streaming with a host decoder
 
