@@ -50,6 +50,8 @@ let game_audio_control = sound_control.clone();
 For each output frame, render music and effects and combine them:
 
 ~~~rust
+use verdandi::prelude::{Engine, SoundMixer};
+
 fn render_stereo_block(
     music: &mut Engine,
     sounds: &mut SoundMixer,
