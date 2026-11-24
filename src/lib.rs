@@ -29,11 +29,11 @@ pub mod prelude {
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
     };
     pub use crate::sound::{
-        AudioBus, AudioClip, AudioClipError, LoopKey, SoundCategory, SoundCommandError,
-        SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError,
+        AudioBus, AudioClip, AudioClipError, AudioStream, LoopKey, SoundCategory,
+        SoundCommandError, SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError,
         SoundMixerCreateError, SoundMixerStatus, StreamBuffer, StreamBufferConfig,
-        StreamBufferConfigError, StreamWriteError, StreamWriter, AudioStream,
-        MAX_SOUND_VOICES, MAX_STREAM_BUFFER_FRAMES,
+        StreamBufferConfigError, StreamWriteError, StreamWriter, MAX_SOUND_VOICES,
+        MAX_STREAM_BUFFER_FRAMES,
     };
     pub use crate::theory::{ScaleKind, Theme, ThemeOverrides};
 

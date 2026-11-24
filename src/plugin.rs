@@ -284,7 +284,8 @@ impl AudioController {
         gain: f32,
         fade_in: Duration,
     ) -> Result<(), SoundCommandError> {
-        self.sounds.play_stream_loop(key, stream, category, gain, fade_in)
+        self.sounds
+            .play_stream_loop(key, stream, category, gain, fade_in)
     }
 
     /// Set an independent music, effects, or ambience bus gain immediately.
