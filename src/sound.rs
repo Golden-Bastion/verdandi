@@ -18,16 +18,21 @@ pub const MAX_SOUND_VOICES: usize = 128;
 /// The independent gain/mute buses exposed by the unified audio controller.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AudioBus {
+    /// Procedurally composed background music and its synthesized stingers.
     Music,
+    /// Discrete one-shot sound effects.
     Effects,
+    /// Persistent environmental sounds.
     Ambience,
 }
 
 /// A non-musical routing category handled by SoundMixer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SoundCategory {
+    /// Discrete one-shot effects such as impacts or footsteps.
     #[default]
     Effects,
+    /// Persistent or long-running environmental sounds.
     Ambience,
 }
 
@@ -102,18 +107,24 @@ impl AudioClip {
         })
     }
 
+    /// Source sample rate, in frames per second.
+    /// Configured output sample rate, in frames per second.
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
+    /// Number of interleaved channels: one for mono or two for stereo.
+    /// Number of interleaved channels: one for mono or two for stereo.
     pub fn channels(&self) -> u16 {
         self.channels
     }
 
+    /// Number of complete PCM frames in this clip.
     pub fn frame_count(&self) -> usize {
         self.samples.len() / usize::from(self.channels)
     }
 
+    /// Playback duration at the clip's source sample rate.
     pub fn duration(&self) -> Duration {
         Duration::from_secs_f64(self.frame_count() as f64 / f64::from(self.sample_rate))
     }
@@ -121,10 +132,15 @@ impl AudioClip {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AudioClipError {
+    /// The supplied sample rate was zero.
     InvalidSampleRate,
+    /// The clip has a channel count other than mono or stereo.
     UnsupportedChannelCount(u16),
+    /// The clip contains no PCM frames.
     Empty,
+    /// The sample count is not divisible by the channel count.
     IncompleteFrame { sample_count: usize, channels: u16 },
+    /// The indexed PCM sample is NaN or infinite.
     NonFiniteSample { index: usize },
 }
 
@@ -164,13 +180,18 @@ pub const MAX_STREAM_BUFFER_FRAMES: usize = 262_144;
 /// resampling on the host's worker thread before calling StreamWriter::write_interleaved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StreamBufferConfig {
+    /// PCM sample rate. Must equal the destination mixer sample rate.
     pub sample_rate: u32,
+    /// Interleaved channel count: one for mono or two for stereo.
     pub channels: u16,
+    /// Maximum number of frames retained by the bounded ring.
     pub capacity_frames: usize,
+    /// Number of queued frames required before playback begins. Zero starts immediately.
     pub prebuffer_frames: usize,
 }
 
 impl StreamBufferConfig {
+    /// Configure a stream buffer. Validation occurs when [`StreamBuffer::create`] is called.
     pub const fn new(
         sample_rate: u32,
         channels: u16,
@@ -186,6 +207,7 @@ impl StreamBufferConfig {
     }
 }
 
+/// Defaults to 44.1 kHz stereo, two seconds of capacity, and a 100 ms startup prebuffer.
 impl Default for StreamBufferConfig {
     fn default() -> Self {
         Self {
@@ -199,9 +221,13 @@ impl Default for StreamBufferConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StreamBufferConfigError {
+    /// The configured sample rate was zero.
     InvalidSampleRate,
+    /// The configured channel count was not one or two.
     UnsupportedChannelCount(u16),
+    /// Capacity was zero or exceeded [`MAX_STREAM_BUFFER_FRAMES`].
     InvalidCapacity { requested: usize, maximum: usize },
+    /// The requested startup prebuffer exceeded the ring capacity.
     InvalidPrebuffer { requested: usize, capacity: usize },
 }
 
@@ -231,8 +257,11 @@ impl Error for StreamBufferConfigError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StreamWriteError {
+    /// The producer has already signaled end-of-stream with [`StreamWriter::finish`].
     Finished,
+    /// The sample slice does not contain complete channel frames.
     IncompleteFrame { sample_count: usize, channels: u16 },
+    /// The indexed sample is NaN or infinite.
     NonFiniteSample { index: usize },
 }
 
@@ -349,10 +378,12 @@ impl StreamWriter {
         self.shared.finished.store(true, Ordering::Release);
     }
 
+    /// Number of frames currently waiting in the ring.
     pub fn available_frames(&self) -> usize {
         self.shared.frames.available()
     }
 
+    /// Whether the producer has signaled end-of-stream.
     pub fn is_finished(&self) -> bool {
         self.shared.finished.load(Ordering::Acquire)
     }
@@ -367,21 +398,26 @@ pub struct AudioStream {
 }
 
 impl AudioStream {
+    /// PCM sample rate required by this stream and its destination mixer.
     pub fn sample_rate(&self) -> u32 {
         self.shared.config.sample_rate
     }
     pub fn channels(&self) -> u16 {
         self.shared.config.channels
     }
+    /// Maximum number of frames the ring can hold.
     pub fn capacity_frames(&self) -> usize {
         self.shared.config.capacity_frames
     }
+    /// Number of queued frames required before the mixer starts consuming.
     pub fn prebuffer_frames(&self) -> usize {
         self.shared.config.prebuffer_frames
     }
+    /// Number of decoded frames currently queued for playback.
     pub fn available_frames(&self) -> usize {
         self.shared.frames.available()
     }
+    /// Whether the producer has declared end-of-stream.
     pub fn is_finished(&self) -> bool {
         self.shared.finished.load(Ordering::Acquire)
     }
@@ -393,6 +429,7 @@ impl AudioStream {
     pub fn is_playing(&self) -> bool {
         self.status.playing.load(Ordering::Acquire)
     }
+    /// Cumulative output frames for which playback had started but no input frame was available.
     pub fn underrun_frames(&self) -> u64 {
         self.status.underrun_frames.load(Ordering::Relaxed)
     }
@@ -472,11 +509,14 @@ impl SpscFrameRing {
 /// Configuration for a bounded, engine-independent sound mixer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SoundMixerConfig {
+    /// Stereo output sample rate, in frames per second.
     pub sample_rate: u32,
+    /// Maximum simultaneous resident/streamed voices. Valid range is 1 through 128.
     pub max_voices: usize,
 }
 
 impl SoundMixerConfig {
+    /// Set the output rate and maximum number of simultaneous sound voices.
     pub const fn new(sample_rate: u32, max_voices: usize) -> Self {
         Self {
             sample_rate,
@@ -485,6 +525,7 @@ impl SoundMixerConfig {
     }
 }
 
+/// Defaults to 44.1 kHz output and a 32-voice pool.
 impl Default for SoundMixerConfig {
     fn default() -> Self {
         Self {
@@ -496,7 +537,9 @@ impl Default for SoundMixerConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundMixerConfigError {
+    /// The configured output sample rate was zero.
     InvalidSampleRate,
+    /// The voice limit was zero or exceeded [`MAX_SOUND_VOICES`].
     InvalidVoiceLimit { requested: usize, maximum: usize },
 }
 
@@ -515,6 +558,7 @@ impl Error for SoundMixerConfigError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundMixerCreateError {
+    /// This controller already has an active mixer consuming its queue.
     AlreadyCreated,
 }
 
@@ -560,8 +604,11 @@ impl Error for SoundCommandError {}
 /// Snapshot of the mixer's bounded voice usage and rejected-play count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SoundMixerStatus {
+    /// Number of voices currently active in the mixer.
     pub active_voices: usize,
+    /// Configured maximum number of simultaneous voices.
     pub max_voices: usize,
+    /// Cumulative play requests rejected because all voices were occupied.
     pub rejected_voices: u64,
 }
 
@@ -578,6 +625,7 @@ pub struct SoundController {
 }
 
 impl SoundController {
+    /// Create a control handle and its bounded command queue.
     pub fn new(config: SoundMixerConfig) -> Result<Self, SoundMixerConfigError> {
         if config.sample_rate == 0 {
             return Err(SoundMixerConfigError::InvalidSampleRate);
@@ -604,6 +652,9 @@ impl SoundController {
             .expect("a SoundController may only have one active SoundMixer")
     }
 
+    /// Try to create the controller's single queue consumer without panicking.
+    ///
+    /// The mixer must be created before the host starts its audio callback.
     pub fn try_create_mixer(&self) -> Result<SoundMixer, SoundMixerCreateError> {
         self.shared
             .consumer_active
@@ -616,6 +667,7 @@ impl SoundController {
         self.shared.config.sample_rate
     }
 
+    /// Configured maximum number of simultaneous voices.
     pub fn max_voices(&self) -> usize {
         self.shared.config.max_voices
     }
@@ -738,23 +790,28 @@ impl SoundController {
         result
     }
 
+    /// Set a category's linear gain. The value is sanitized and clamped to 0.0..=1.0.
     pub fn set_category_volume(&self, category: SoundCategory, gain: f32) {
         self.shared.category_gain[category.index()]
             .store(sanitize_gain(gain).to_bits(), Ordering::Release);
     }
 
+    /// Current configured linear gain for the selected category.
     pub fn category_volume(&self, category: SoundCategory) -> f32 {
         f32::from_bits(self.shared.category_gain[category.index()].load(Ordering::Acquire))
     }
 
+    /// Mute or unmute a category without changing its configured gain.
     pub fn set_category_muted(&self, category: SoundCategory, muted: bool) {
         self.shared.category_muted[category.index()].store(muted, Ordering::Release);
     }
 
+    /// Whether the selected category is muted.
     pub fn category_muted(&self, category: SoundCategory) -> bool {
         self.shared.category_muted[category.index()].load(Ordering::Acquire)
     }
 
+    /// Snapshot voice usage and the number of play requests rejected by the voice limit.
     pub fn status(&self) -> SoundMixerStatus {
         SoundMixerStatus {
             active_voices: self.shared.active_voices.load(Ordering::Acquire),
@@ -990,6 +1047,9 @@ impl SoundMixer {
     }
 
     /// Fill an interleaved stereo output slice.
+    /// Fill an interleaved stereo slice ordered L, R, L, R, ...
+    ///
+    /// Any trailing sample that does not form a complete stereo frame is left untouched.
     pub fn render_interleaved(&mut self, out: &mut [f32]) {
         for frame in out.chunks_exact_mut(2) {
             let (left, right) = self.render_frame();
