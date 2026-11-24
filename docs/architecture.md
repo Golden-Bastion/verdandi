@@ -36,6 +36,8 @@ The render path must be treated as a hard real-time boundary:
 
 Resident clips are linearly resampled by the sound mixer to its output rate. Streaming is different: a stream must already use the mixer's exact output sample rate. Resample streamed source data on the host worker.
 
+The current music renderer also performs composition work at loop boundaries and constructs an incoming engine when a preset transition is processed. Those operations contribute to the render callback's workload and can create allocation/cost spikes. Verdandi keeps file access and decoding out of the callback, but should not yet be represented as a universally allocation-free hard-real-time engine. Hosts with strict callback deadlines should profile the target workload, especially around loop boundaries and preset changes.
+
 ## Thread and queue ownership
 
 ### Music
