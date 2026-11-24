@@ -6,13 +6,18 @@
 use crate::rng::{derive_seed, Rng};
 use std::f32::consts::TAU;
 
+/// Lowest supported procedural generator sample rate.
 pub const MIN_PROCEDURAL_SAMPLE_RATE: u32 = 8_000;
+/// Highest supported procedural generator sample rate.
 pub const MAX_PROCEDURAL_SAMPLE_RATE: u32 = 192_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProceduralError {
+    /// The requested sample rate is outside the supported range.
     InvalidSampleRate,
+    /// A normalized parameter is non-finite or outside 0.0..=1.0.
     InvalidParameter,
+    /// The output slice does not contain complete stereo frames.
     OutputMustContainStereoFrames,
 }
 
@@ -67,6 +72,7 @@ impl LowPass {
 /// Continuous wind configuration.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WindConfig {
+    /// Output sample rate in Hz.
     pub sample_rate: u32,
     /// Wind strength, 0.0..=1.0.
     pub intensity: f32,
@@ -82,6 +88,7 @@ pub struct WindGenerator {
     sample_rate: f32, intensity: f32, rng: Rng, filter: LowPass, phase: f32,
 }
 impl WindGenerator {
+    /// Construct a wind source with an independent deterministic random stream.
     pub fn new(config: WindConfig, seed: u64) -> Result<Self, ProceduralError> {
         validate_rate(config.sample_rate)?;
         validate_unit(config.intensity)?;
@@ -114,6 +121,7 @@ impl ProceduralGenerator for WindGenerator {
 /// Continuous rain configuration.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RainConfig {
+    /// Output sample rate in Hz.
     pub sample_rate: u32,
     /// Drop density, 0.0..=1.0.
     pub density: f32,
@@ -144,6 +152,7 @@ pub struct RainGenerator {
     rng: Rng, high_pass_state: f32, drops: [Drop; DROP_VOICES], next_drop: usize,
 }
 impl RainGenerator {
+    /// Construct a rain source with an independent deterministic random stream.
     pub fn new(config: RainConfig, seed: u64) -> Result<Self, ProceduralError> {
         validate_rate(config.sample_rate)?;
         validate_unit(config.density)?;
@@ -186,7 +195,9 @@ impl ProceduralGenerator for RainGenerator {
 /// Configuration shared by the one-shot footstep generator.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FootstepConfig {
+    /// Output sample rate in Hz.
     pub sample_rate: u32,
+    /// Step strength, 0.0..=1.0.
     pub intensity: f32,
     /// Surface brightness, 0.0..=1.0.
     pub brightness: f32,
@@ -201,6 +212,7 @@ pub struct FootstepGenerator {
     rng: Rng, low_pass: f32,
 }
 impl FootstepGenerator {
+    /// Construct one deterministic footstep.
     pub fn new(config: FootstepConfig, seed: u64) -> Result<Self, ProceduralError> {
         validate_rate(config.sample_rate)?;
         validate_unit(config.intensity)?;
@@ -235,7 +247,9 @@ impl ProceduralGenerator for FootstepGenerator {
 /// Configuration for a one-shot impact.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ImpactConfig {
+    /// Output sample rate in Hz.
     pub sample_rate: u32,
+    /// Impact strength, 0.0..=1.0.
     pub intensity: f32,
     /// Tonal body amount, 0.0..=1.0.
     pub resonance: f32,
@@ -250,6 +264,7 @@ pub struct ImpactGenerator {
     rng: Rng, low_pass: f32, phase: f32,
 }
 impl ImpactGenerator {
+    /// Construct one deterministic impact.
     pub fn new(config: ImpactConfig, seed: u64) -> Result<Self, ProceduralError> {
         validate_rate(config.sample_rate)?;
         validate_unit(config.intensity)?;
