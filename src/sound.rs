@@ -1596,7 +1596,8 @@ mod tests {
     #[test]
     fn stream_waits_for_prebuffer_then_drains_after_finish() {
         let (controller, mut mixer) = system(4, 2);
-        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        let (mut writer, stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
         assert_eq!(writer.write_interleaved(&[0.1, 0.2]), Ok(2));
         controller
             .play_stream(stream.clone(), SoundCategory::Ambience, 1.0)
@@ -1622,7 +1623,8 @@ mod tests {
     #[test]
     fn stream_underflow_outputs_silence_and_resumes_when_fed() {
         let (controller, mut mixer) = system(4, 1);
-        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        let (mut writer, stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
         writer.write_interleaved(&[0.5]).unwrap();
         controller
             .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
@@ -1638,7 +1640,8 @@ mod tests {
 
     #[test]
     fn stream_writer_is_bounded_and_reports_partial_writes() {
-        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 2, 2, 1)).unwrap();
+        let (mut writer, stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 2, 2, 1)).unwrap();
         assert_eq!(
             writer.write_interleaved(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
             Ok(2)
@@ -1662,7 +1665,8 @@ mod tests {
     #[test]
     fn stream_requires_mixer_sample_rate_and_finishes_short_prebuffer() {
         let (controller, mut mixer) = system(8, 1);
-        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        let (mut writer, stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
         assert_eq!(
             controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0),
             Err(SoundCommandError::StreamSampleRateMismatch {
@@ -1683,7 +1687,8 @@ mod tests {
     #[test]
     fn keyed_stream_loop_supports_fade_and_stop() {
         let (controller, mut mixer) = system(4, 1);
-        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 8, 1)).unwrap();
+        let (mut writer, stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 8, 1)).unwrap();
         writer.write_interleaved(&[1.0; 8]).unwrap();
         controller
             .play_stream_loop(
@@ -1739,7 +1744,8 @@ mod tests {
     #[test]
     fn streaming_stereo_frames_preserve_channel_separation() {
         let (controller, mut mixer) = system(4, 1);
-        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 2, 4, 1)).unwrap();
+        let (mut writer, stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 2, 4, 1)).unwrap();
         writer.write_interleaved(&[0.25, -0.5]).unwrap();
         writer.finish();
         controller
