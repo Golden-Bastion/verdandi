@@ -8,7 +8,7 @@ Verdandi is a reusable Rust audio engine for deterministic, layered procedural m
 |---|---|
 | [Getting started](getting-started.md) | Installation, feature flags, first render, and example commands |
 | [Procedural music](procedural-music.md) | Presets, seeds, musical themes, layers, intensity, transitions, and stingers |
-| [Sound effects and ambience](sound-effects.md) | PCM clips, one-shots, keyed loops, buses, streaming, errors, and ownership |
+| [Procedural sound generation](procedural-audio.md) | Deterministic procedural effects and continuous ambience generators |\n| [Sound effects and ambience](sound-effects.md) | PCM clips, one-shots, keyed loops, buses, streaming, errors, and ownership |
 | [SFZ instruments](sfz-instruments.md) | Loading sample libraries, supported WAV formats, patch limitations, and layer assignment |
 | [Bevy integration](bevy-integration.md) | Bevy 0.20 plugin setup, resources, gameplay control, and unified audio buses |
 | [Custom audio hosts](custom-audio-hosts.md) | Using Verdandi without Bevy and mixing it into your own audio callback |
