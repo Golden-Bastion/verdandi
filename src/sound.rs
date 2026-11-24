@@ -1273,7 +1273,7 @@ impl Voice {
                 return ((0.0, 0.0), true);
             }
             stream
-                .shared
+                .status
                 .underrun_frames
                 .fetch_add(1, Ordering::Relaxed);
             return ((0.0, 0.0), false);
