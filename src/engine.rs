@@ -456,7 +456,12 @@ impl MusicShared {
     }
 
     fn request_gain(&self, volume: f32, duration_ms: u64) {
-        store_f32(&self.target_gain, volume.clamp(0.0, 1.0));
+        let volume = if volume.is_nan() {
+            0.0
+        } else {
+            volume.clamp(0.0, 1.0)
+        };
+        store_f32(&self.target_gain, volume);
         self.gain_duration_ms.store(duration_ms, Relaxed);
         self.gain_pending.store(true, Release);
     }
@@ -1003,6 +1008,12 @@ mod tests {
         engine.render_frame();
         assert_eq!(shared.volume(), 1.0);
         assert_eq!(engine.current_gain, 1.0);
+        shared.set_volume(f32::NAN);
+        engine.render_frame();
+        assert_eq!(shared.volume(), 0.0);
+        assert_eq!(engine.current_gain, 0.0);
+        shared.set_volume(1.0);
+        engine.render_frame();
 
         shared.fade_to(-1.0, Duration::from_secs(1));
         for _ in 0..4_410 {
