@@ -10,14 +10,18 @@ Create **MusicConfig**, **MusicShared**, and **Engine** before starting the audi
 use std::sync::Arc;
 use verdandi::prelude::{Engine, MusicConfig, MusicShared};
 
-let config = MusicConfig::default();
-let shared = Arc::new(MusicShared::new(&config));
-let mut engine = Engine::new(shared.clone(), &config);
+fn render_one_block() {
+    let config = MusicConfig::default();
+    let shared = Arc::new(MusicShared::new(&config));
+    let mut engine = Engine::new(shared.clone(), &config);
 
-// In the host's callback, fill an even-length f32 slice.
-// Samples are interleaved stereo: L, R, L, R, ...
-let mut output = [0.0_f32; 128 * 2];
-engine.render_interleaved(&mut output);
+    // In the host's callback, fill an even-length f32 slice.
+    // Samples are interleaved stereo: L, R, L, R, ...
+    let mut output = [0.0_f32; 128 * 2];
+    engine.render_interleaved(&mut output);
+
+    // Forward output to the host's device/backend.
+}
 ~~~
 
 The callback owns the mutable **Engine**. Game/control code may retain a clone of the **Arc<MusicShared>** and request changes without mutably accessing the engine. For example, use **request_seed**, **request_preset**, **request_stinger**, **set_layer_enabled**, and the intensity/transport/gain controls on **MusicShared**.
@@ -33,17 +37,30 @@ use verdandi::prelude::{
     SoundMixerConfig,
 };
 
-let config = MusicConfig::default();
-let music_shared = Arc::new(MusicShared::new(&config));
-let mut music_engine = Engine::new(music_shared.clone(), &config);
+struct AudioPath {
+    music: Engine,
+    sounds: SoundMixer,
+    controls: SoundController,
+}
 
-let sound_control = SoundController::new(SoundMixerConfig::new(
-    config.sample_rate,
-    32,
-))?;
-let mut sound_mixer = sound_control.create_mixer();
+fn build_audio_path() -> Result<AudioPath, Box<dyn std::error::Error>> {
+    let config = MusicConfig::default();
+    let music_shared = Arc::new(MusicShared::new(&config));
+    let music = Engine::new(music_shared, &config);
 
-// Clone sound_control for game-side producers. The callback owns sound_mixer.
+    let controls = SoundController::new(SoundMixerConfig::new(
+        config.sample_rate,
+        32,
+    ))?;
+    let sounds = controls.create_mixer();
+
+    // Clone controls for game-side producers before moving sounds to the callback.
+    Ok(AudioPath {
+        music,
+        sounds,
+        controls,
+    })
+}
 let game_audio_control = sound_control.clone();
 ~~~
 
