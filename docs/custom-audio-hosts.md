@@ -54,7 +54,7 @@ fn build_audio_path() -> Result<AudioPath, Box<dyn std::error::Error>> {
     ))?;
     let sounds = controls.create_mixer();
 
-    // Clone controls for game-side producers before moving sounds to the callback.
+    // Keep controls on the game side; move music and sounds into the callback.
     Ok(AudioPath {
         music,
         sounds,
