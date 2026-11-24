@@ -1,12 +1,12 @@
 # Verdandi Audio Quality Roadmap
 
-This document is the durable plan for improving Verdandi's instrument realism and audio quality. Update the milestone checkboxes and decisions here as work is completed so future development sessions can resume from the repository rather than relying on memory.
+This document is the durable plan for improving Verdandi's game-audio capabilities and audio quality. It tracks instrument realism, procedural sound families, and playback quality. Update the milestone checkboxes and decisions here as work is completed so future development sessions can resume from the repository rather than relying on memory.
 
 ## Goal and design direction
 
 Prioritize the best musical result, not a sample-free implementation. Verdandi combines user-supplied recorded samples and procedural synthesis where each is useful. The SFZ parser and sampler are first-party code in this repository; audio libraries remain external to the crate and are never fetched automatically.
 
-Keep the existing deterministic composition engine and layered, game-oriented behavior. The composer decides what notes to play and when; instrument backends decide how those notes sound. Preserve existing sounds unless a replacement or addition is demonstrably better.
+Keep Verdandi explicitly game-audio-oriented while preserving application independence. The composer decides what notes to play and when; instrument backends decide how those notes sound; procedural sound generators provide reusable effects for common gameplay events. Game concepts such as weapons, clashes, material impacts, character actions, and destruction belong in the library when they can be expressed without depending on a particular game's entity model, event bus, combat rules, or world simulation. Preserve existing sounds unless a replacement or addition is demonstrably better.
 
 ## Current baseline
 
@@ -200,6 +200,13 @@ Status: **In progress**
 - [x] Cover deterministic block rendering, finite-effect completion, output bounds, and parameter response with regression tests.
 - [x] Document finite-clip and continuous-stream integration.
 - [ ] Audition generated sounds at representative sample rates and tune their acoustic character.
-- [ ] Expand the generator toolkit and sound families based on reusable requirements.
+- [ ] Expand the generator toolkit and game-audio families based on reusable requirements, beginning with combat/weapon interactions, material response, character actions and death sounds, and destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
 
 **Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
+
+
+## Game-audio direction
+
+Verdandi is a reusable game-audio engine, not a generic audio toolkit that avoids gameplay concepts. Its public API may expose reusable concepts such as weapon impacts and clashes, parries, armor and shield hits, material response, footsteps, character exertion and death sounds, blood-splatter effects, breakage, and debris. These are library-level sound-design concepts; a consuming game remains responsible for deciding when they occur and how they relate to its entities, combat rules, world, and content catalogue.
+
+Prioritize cohesive generator families with shared synthesis primitives and meaningful controls over isolated one-off effects. Keep deterministic variation, bounded caller-buffer rendering, and the existing separation between generation and playback. See [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28) for the next expansion scope.
