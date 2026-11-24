@@ -1797,6 +1797,42 @@ mod tests {
     }
 
     #[test]
+    fn keyed_stream_replacement_releases_old_source_without_adding_a_voice() {
+        let (controller, mut mixer) = system(4, 1);
+        let (mut old_writer, old_stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        old_writer.write_interleaved(&[0.2; 4]).unwrap();
+        controller
+            .play_stream_loop(
+                LoopKey(91),
+                old_stream.clone(),
+                SoundCategory::Ambience,
+                1.0,
+                Duration::ZERO,
+            )
+            .unwrap();
+        assert_eq!(mixer.render_frame(), (0.2, 0.2));
+
+        let (mut new_writer, new_stream) =
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        new_writer.write_interleaved(&[0.8; 4]).unwrap();
+        controller
+            .play_stream_loop(
+                LoopKey(91),
+                new_stream.clone(),
+                SoundCategory::Ambience,
+                1.0,
+                Duration::ZERO,
+            )
+            .unwrap();
+
+        assert_eq!(mixer.render_frame(), (0.8, 0.8));
+        assert!(!old_stream.is_active());
+        assert!(new_stream.is_playing());
+        assert_eq!(controller.status().active_voices, 1);
+    }
+
+    #[test]
     fn stream_config_and_finished_writer_are_validated() {
         assert!(matches!(
             StreamBuffer::create(StreamBufferConfig::new(0, 1, 4, 1)),
