@@ -88,7 +88,7 @@ Respect the separation between the composition engine, synthesis/rendering, and 
 
 Performance-sensitive changes must be considered in terms of worst-case callback behaviour, not only average performance.
 
-## 7. Determinism and musical behaviour
+## 7. Determinism and generated audio behaviour
 
 Determinism is a core contract, not an incidental implementation detail.
 
@@ -97,7 +97,8 @@ Determinism is a core contract, not an incidental implementation detail.
 - Keep independent layers or events isolated from unrelated random-stream consumption where the existing design requires it.
 - Preserve repeatability for identical seeds, presets, pace, overrides, and configuration.
 - Make intentional changes to generated musical output explicit and cover them with appropriate tests.
-- Preserve musical coherence, phrase structure, and preset identity when extending generators.
+- Preserve musical coherence, phrase structure, and preset identity when extending music generators.
+- For sound effects, use stable seeded variation and meaningful sound-design controls; avoid coupling generation to unrelated event or entity state.
 - Respect loop/bar boundaries and documented transition behaviour unless the requested change intentionally revises them.
 
 Do not silently alter existing preset character or deterministic output while making an unrelated fix.
