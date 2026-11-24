@@ -39,7 +39,6 @@ fn play_footstep(
     audio.play_one_shot(footstep.clone(), SoundCategory::Effects, 0.85)
 }
 ~~~
-~~~
 
 **AudioClip::from_shared_samples** accepts an existing **Arc<[f32]>** when the host already stores PCM in shared immutable memory. Clips must have a non-zero sample rate, at least one complete frame, one or two channels, and finite sample values.
 
@@ -129,11 +128,9 @@ fn start_stream(
     Ok((writer, stream))
 }
 
-// Call start_stream from your startup/gameplay code, then move both returned
-// handles into the host decoder worker along with its decoder state.
 ~~~
 
-The writer belongs on one host worker thread. It is not cloneable. The stream handle is submitted to Verdandi and can also be used by the host to inspect playback status.
+Call this from startup/gameplay code, then move both returned handles into the host decoder worker along with its decoder state. The writer belongs on one host worker thread. It is not cloneable. The stream handle is submitted to Verdandi and can also be used by the host to inspect playback status.
 
 ### Write every frame without dropping partial writes
 
@@ -160,6 +157,33 @@ fn write_all_frames(
             // This wait happens on the host worker, never in the audio callback.
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    Ok(())
+}
+~~~
+
+~~~rust
+use std::sync::Arc;
+use std::time::Duration;
+use verdandi::prelude::{
+    AudioStream, StreamWriteError, StreamWriter,
+};
+
+fn feed_decoded_chunks(
+    mut writer: StreamWriter,
+    stream: Arc<AudioStream>,
+    decoded_chunks: impl IntoIterator<Item = Vec<f32>>,
+) -> Result<(), StreamWriteError> {
+    for chunk in decoded_chunks {
+        write_all_frames(&mut writer, &chunk, 2)?;
+    }
+
+    writer.finish();
+
+    // Keep both handles alive until the mixer reports that it released the voice.
+    while stream.is_active() {
+        std::thread::sleep(Duration::from_millis(2));
     }
 
     Ok(())
