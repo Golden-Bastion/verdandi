@@ -1751,6 +1751,46 @@ mod tests {
     }
 
     #[test]
+    fn stream_ring_preserves_frame_order_with_concurrent_producer() {
+        let (controller, mut mixer) = system(48_000, 1);
+        let (mut writer, stream) =
+            StreamBuffer::new(StreamBufferConfig::new(48_000, 1, 8, 1)).unwrap();
+        controller
+            .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
+            .unwrap();
+
+        let producer = std::thread::spawn(move || {
+            for index in 0..256 {
+                let sample = 0.1 + index as f32 * 0.001;
+                loop {
+                    match writer.write_interleaved(&[sample]) {
+                        Ok(1) => break,
+                        Ok(0) => std::thread::yield_now(),
+                        Ok(_) => unreachable!("one input frame cannot accept multiple frames"),
+                        Err(error) => panic!("unexpected stream write error: {error}"),
+                    }
+                }
+            }
+            writer.finish();
+        });
+
+        let mut rendered = Vec::new();
+        while stream.is_active() {
+            let (left, _) = mixer.render_frame();
+            if left != 0.0 {
+                rendered.push(left);
+            }
+            std::thread::yield_now();
+        }
+        producer.join().unwrap();
+
+        let expected = (0..256)
+            .map(|index| 0.1 + index as f32 * 0.001)
+            .collect::<Vec<_>>();
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
     fn stream_config_and_finished_writer_are_validated() {
         assert!(matches!(
             StreamBuffer::new(StreamBufferConfig::new(0, 1, 4, 1)),
