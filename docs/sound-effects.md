@@ -17,21 +17,28 @@ The host decodes an asset away from the audio callback, then constructs an immut
 
 ~~~rust
 use std::sync::Arc;
-use verdandi::prelude::{AudioClip, AudioController, SoundCategory};
+use verdandi::prelude::{
+    AudioClip, AudioController, SoundCategory, SoundCommandError,
+};
 
-fn play_footstep(
-    audio: &AudioController,
+fn make_footstep(
     decoded_mono_samples: Vec<f32>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let footstep = Arc::new(AudioClip::from_samples(
+) -> Result<Arc<AudioClip>, verdandi::sound::AudioClipError> {
+    Ok(Arc::new(AudioClip::from_samples(
         48_000,
         1,
         decoded_mono_samples,
-    )?);
-
-    audio.play_one_shot(footstep.clone(), SoundCategory::Effects, 0.85)?;
-    Ok(())
+    )?))
 }
+
+// Keep the catalogue-owned Arc alive after submitting the playback request.
+fn play_footstep(
+    audio: &AudioController,
+    footstep: &Arc<AudioClip>,
+) -> Result<(), SoundCommandError> {
+    audio.play_one_shot(footstep.clone(), SoundCategory::Effects, 0.85)
+}
+~~~
 ~~~
 
 **AudioClip::from_shared_samples** accepts an existing **Arc<[f32]>** when the host already stores PCM in shared immutable memory. Clips must have a non-zero sample rate, at least one complete frame, one or two channels, and finite sample values.
@@ -49,11 +56,11 @@ use verdandi::prelude::{
 
 fn start_rain(
     audio: &AudioController,
-    rain: Arc<AudioClip>,
+    rain: &Arc<AudioClip>,
 ) -> Result<(), SoundCommandError> {
     audio.play_loop(
         LoopKey(100),
-        rain,
+        rain.clone(),
         SoundCategory::Ambience,
         0.55,
         Duration::from_secs(2),
@@ -67,7 +74,6 @@ fn quiet_rain(audio: &AudioController) -> Result<(), SoundCommandError> {
 fn stop_rain(audio: &AudioController) -> Result<(), SoundCommandError> {
     audio.stop_loop(LoopKey(100), Duration::from_secs(2))
 }
-~~~
 ~~~
 
 A **LoopKey** is an application-defined stable identifier. Starting another loop with the same key replaces the existing voice at the next rendered frame; the replacement starts from the beginning of its clip. A non-zero fade-in starts the new voice at silence. Loop and master fades are linear. A later fade replaces the current fade from the gain already reached. A zero-duration stop removes the loop immediately.
@@ -88,7 +94,6 @@ fn balance_buses(audio: &AudioController) {
     let effects_gain = audio.bus_volume(AudioBus::Effects);
     let ambience_is_muted = audio.bus_muted(AudioBus::Ambience);
 }
-~~~
 ~~~
 
 The engine-independent **SoundController** has equivalent category-level controls through **set_category_volume**, **category_volume**, **set_category_muted**, and **category_muted**.
@@ -124,8 +129,8 @@ fn start_stream(
     Ok((writer, stream))
 }
 
-let (mut writer, stream) = start_stream(&audio)?;
-~~~
+// Call start_stream from your startup/gameplay code, then move both returned
+// handles into the host decoder worker along with its decoder state.
 ~~~
 
 The writer belongs on one host worker thread. It is not cloneable. The stream handle is submitted to Verdandi and can also be used by the host to inspect playback status.
@@ -161,7 +166,7 @@ fn write_all_frames(
 }
 ~~~
 
-Call this helper for each decoded chunk, using a channel count that matches the stream configuration. It assumes that each chunk contains complete frames and finite samples. The mixer must be running concurrently so it can consume frames and make room in the ring.
+Call this helper for each decoded chunk, using a channel count that matches the stream configuration. It assumes that each chunk contains complete frames and finite samples. The mixer must be running concurrently so it can consume frames and make room in the ring. After the decoder has supplied its final chunk, call writer.finish(). Keep the writer and stream handle together on the worker until stream.is_active() becomes false; the worker may sleep briefly between status checks.
 
 When the decoder reaches end-of-stream, call **writer.finish()**. Verdandi drains all buffered frames before releasing the voice. If the stream reaches EOF before the startup prebuffer threshold is reached, it starts with the available data and drains it rather than waiting forever.
 
