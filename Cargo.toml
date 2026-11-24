@@ -5,7 +5,7 @@ edition = "2021"
 license = "Apache-2.0"
 authors = ["right-ward"]
 repository = "https://github.com/right-ward/verdandi"
-description = "Seeded, layered game music with procedural synthesis and optional SFZ sample instruments"
+description = "Deterministic game audio with procedural music, sound generation, PCM playback, and optional SFZ instruments"
 publish = true
 
 [features]
