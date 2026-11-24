@@ -1668,8 +1668,7 @@ mod tests {
     #[test]
     fn stream_waits_for_prebuffer_then_drains_after_finish() {
         let (controller, mut mixer) = system(4, 2);
-        let (_, stream) =
-            StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        let (_, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
         assert_eq!(writer.write_interleaved(&[0.1, 0.2]), Ok(2));
         controller
             .play_stream(stream.clone(), SoundCategory::Ambience, 1.0)
