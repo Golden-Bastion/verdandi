@@ -160,7 +160,7 @@ impl RainGenerator {
 impl ProceduralGenerator for RainGenerator {
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
         validate_output(output)?;
-        let probability = self.density * (1_800.0 / self.sample_rate);
+        let probability = self.density * (120.0 / self.sample_rate);
         let coefficient = 0.025 + self.brightness * 0.65;
         for frame in output.chunks_exact_mut(2) {
             let noise = self.rng.next_f32() * 2.0 - 1.0;
