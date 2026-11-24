@@ -24,7 +24,7 @@ pub mod prelude {
     pub use crate::engine::{
         Engine, InstrumentConfig, MusicConfig, MusicShared, MusicStatus, MusicStinger,
     };
-    pub use crate::preset::{MusicPace, MusicPreset};
+    pub use crate::preset::{MusicPace, MusicPreset};\n    pub use crate::procedural::{\n        FootstepConfig, FootstepGenerator, ImpactConfig, ImpactGenerator,\n        ProceduralError, ProceduralGenerator, RainConfig, RainGenerator, WindConfig,\n        WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,\n    };
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
     };
