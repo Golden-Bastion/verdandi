@@ -19,7 +19,52 @@ permissions:
 
 jobs:
   format:
-    name: Rustfmt
+    name: Auto-format
+    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PUSH_TOKEN }}
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.17.0
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Format source
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          ORIGINAL_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          echo '=== cargo fmt --all ==='
+          cargo fmt --all -v
+
+          if git diff --quiet; then
+            echo "Formatting is already clean."
+            exit 0
+          fi
+
+          git config user.email "110196116+right-ward@users.noreply.github.com"
+          git config user.name "right-ward"
+          git add --all
+          git commit -m "refactor: cargo-fmt"
+          git push origin "HEAD:$HEAD_BRANCH"
+
+  format-check:
+    name: Rustfmt (fork PRs)
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
 
     steps:
