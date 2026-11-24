@@ -4,8 +4,8 @@
 //! chord progression); each layer (drums, bass, pad, arp, lead) then repeats, mutates or
 //! regenerates its pattern every 4-bar loop. Same seed => same evolving track.
 //!
-//! * `rng`, `theory`, `composer`, `synth`, `engine`: engine-agnostic core (no dependencies).
-//! * `plugin` (feature `bevy-plugin`, on by default): Bevy audio source + controller resource.
+//! * `rng`, `theory`, `composer`, `synth`, `engine`, `sound`: engine-agnostic core (no Bevy dependency).
+//! * `plugin` (feature `bevy-plugin`, on by default): Bevy audio source + unified audio controller.
 
 pub mod composer;
 pub mod engine;

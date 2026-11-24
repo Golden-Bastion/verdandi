@@ -1058,6 +1058,24 @@ mod tests {
     }
 
     #[test]
+    fn music_bus_mute_preserves_requested_gain() {
+        let cfg = MusicConfig::default();
+        let shared = Arc::new(MusicShared::new(&cfg));
+        let mut engine = Engine::new(shared.clone(), &cfg);
+
+        shared.set_volume(0.5);
+        engine.apply_gain((0.4, -0.4));
+        assert_eq!(engine.current_gain, 0.5);
+
+        shared.set_muted(true);
+        assert_eq!(engine.apply_gain((0.4, -0.4)), (0.0, 0.0));
+        assert_eq!(engine.current_gain, 0.5);
+
+        shared.set_muted(false);
+        assert_eq!(engine.apply_gain((0.4, -0.4)), (0.2, -0.2));
+    }
+
+    #[test]
     fn reseed_request_is_consumed_at_loop_boundary() {
         let cfg = MusicConfig::default();
         let shared = Arc::new(MusicShared::new(&cfg));

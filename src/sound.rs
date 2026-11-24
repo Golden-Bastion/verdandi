@@ -24,8 +24,9 @@ pub enum AudioBus {
 }
 
 /// A non-musical routing category handled by SoundMixer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SoundCategory {
+    #[default]
     Effects,
     Ambience,
 }
@@ -804,11 +805,6 @@ impl Voice {
     }
 }
 
-impl Default for SoundCategory {
-    fn default() -> Self {
-        Self::Effects
-    }
-}
 
 fn sanitize_gain(gain: f32) -> f32 {
     if gain.is_nan() {
@@ -1046,6 +1042,38 @@ mod tests {
             controller.play_one_shot(sound, SoundCategory::Effects, 1.0),
             Err(SoundCommandError::QueueFull)
         );
+    }
+
+    #[test]
+    fn identical_command_sequences_render_identically() {
+        fn render_sequence() -> Vec<f32> {
+            let (controller, mut mixer) = system(8, 4);
+            let ambience = clip(4, 1, vec![0.2, 0.4, 0.6, 0.8]);
+            let effect = clip(4, 2, vec![0.7, 0.3, 0.5, 0.1]);
+            controller
+                .play_loop(
+                    LoopKey(4),
+                    ambience,
+                    SoundCategory::Ambience,
+                    0.5,
+                    Duration::from_millis(250),
+                )
+                .unwrap();
+            controller
+                .play_one_shot(effect, SoundCategory::Effects, 0.8)
+                .unwrap();
+
+            let mut output = Vec::new();
+            for _ in 0..12 {
+                output.extend_from_slice(&{
+                    let (left, right) = mixer.render_frame();
+                    [left, right]
+                });
+            }
+            output
+        }
+
+        assert_eq!(render_sequence(), render_sequence());
     }
 
     #[test]
