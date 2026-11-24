@@ -133,7 +133,10 @@ impl fmt::Display for AudioClipError {
         match self {
             Self::InvalidSampleRate => write!(f, "sample rate must be greater than zero"),
             Self::UnsupportedChannelCount(channels) => {
-                write!(f, "only mono and stereo clips are supported, got {channels} channels")
+                write!(
+                    f,
+                    "only mono and stereo clips are supported, got {channels} channels"
+                )
             }
             Self::Empty => write!(f, "audio clip must contain at least one frame"),
             Self::IncompleteFrame {
@@ -187,10 +190,9 @@ impl fmt::Display for SoundMixerConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidSampleRate => write!(f, "mixer sample rate must be greater than zero"),
-            Self::InvalidVoiceLimit { requested, maximum } => write!(
-                f,
-                "voice limit must be in 1..={maximum}, got {requested}"
-            ),
+            Self::InvalidVoiceLimit { requested, maximum } => {
+                write!(f, "voice limit must be in 1..={maximum}, got {requested}")
+            }
         }
     }
 }
@@ -347,11 +349,7 @@ impl SoundController {
     }
 
     /// Stop a keyed loop immediately or after a linear fade to silence.
-    pub fn stop_loop(
-        &self,
-        key: LoopKey,
-        fade_out: Duration,
-    ) -> Result<(), SoundCommandError> {
+    pub fn stop_loop(&self, key: LoopKey, fade_out: Duration) -> Result<(), SoundCommandError> {
         self.submit(AudioCommand::StopLoop {
             key,
             duration_frames: duration_frames(fade_out, self.sample_rate()),
@@ -784,8 +782,8 @@ impl Voice {
             return;
         }
         self.fade_elapsed_frames = self.fade_elapsed_frames.saturating_add(1);
-        let progress = (self.fade_elapsed_frames as f32 / self.fade_total_frames as f32)
-            .clamp(0.0, 1.0);
+        let progress =
+            (self.fade_elapsed_frames as f32 / self.fade_total_frames as f32).clamp(0.0, 1.0);
         self.gain =
             self.fade_start_gain + (self.fade_target_gain - self.fade_start_gain) * progress;
         if self.fade_elapsed_frames >= self.fade_total_frames {
@@ -811,7 +809,6 @@ impl Voice {
     }
 }
 
-
 fn sanitize_gain(gain: f32) -> f32 {
     if gain.is_nan() {
         0.0
@@ -821,10 +818,7 @@ fn sanitize_gain(gain: f32) -> f32 {
 }
 
 fn duration_frames(duration: Duration, sample_rate: u32) -> u64 {
-    let frames = duration
-        .as_nanos()
-        .saturating_mul(u128::from(sample_rate))
-        / 1_000_000_000;
+    let frames = duration.as_nanos().saturating_mul(u128::from(sample_rate)) / 1_000_000_000;
     frames.min(u128::from(u64::MAX)) as u64
 }
 
@@ -837,8 +831,8 @@ mod tests {
     }
 
     fn system(sample_rate: u32, max_voices: usize) -> (SoundController, SoundMixer) {
-        let controller = SoundController::new(SoundMixerConfig::new(sample_rate, max_voices))
-            .unwrap();
+        let controller =
+            SoundController::new(SoundMixerConfig::new(sample_rate, max_voices)).unwrap();
         let mixer = controller.create_mixer();
         (controller, mixer)
     }
@@ -993,18 +987,10 @@ mod tests {
         controller.set_category_volume(SoundCategory::Ambience, 0.75);
         controller.set_category_muted(SoundCategory::Effects, true);
         controller
-            .play_one_shot(
-                clip(4, 1, vec![1.0; 2]),
-                SoundCategory::Effects,
-                1.0,
-            )
+            .play_one_shot(clip(4, 1, vec![1.0; 2]), SoundCategory::Effects, 1.0)
             .unwrap();
         controller
-            .play_one_shot(
-                clip(4, 1, vec![1.0; 2]),
-                SoundCategory::Ambience,
-                1.0,
-            )
+            .play_one_shot(clip(4, 1, vec![1.0; 2]), SoundCategory::Ambience, 1.0)
             .unwrap();
 
         assert_eq!(mixer.render_frame(), (0.75, 0.75));
@@ -1016,18 +1002,10 @@ mod tests {
     fn voice_limit_rejects_newest_sound_and_preserves_active_voice() {
         let (controller, mut mixer) = system(4, 1);
         controller
-            .play_one_shot(
-                clip(4, 1, vec![0.2; 8]),
-                SoundCategory::Effects,
-                1.0,
-            )
+            .play_one_shot(clip(4, 1, vec![0.2; 8]), SoundCategory::Effects, 1.0)
             .unwrap();
         controller
-            .play_one_shot(
-                clip(4, 1, vec![0.8; 8]),
-                SoundCategory::Effects,
-                1.0,
-            )
+            .play_one_shot(clip(4, 1, vec![0.8; 8]), SoundCategory::Effects, 1.0)
             .unwrap();
 
         assert_eq!(mixer.render_frame(), (0.2, 0.2));
@@ -1086,11 +1064,7 @@ mod tests {
     fn invalid_or_extreme_gains_are_safely_clamped() {
         let (controller, mut mixer) = system(4, 1);
         controller
-            .play_one_shot(
-                clip(4, 1, vec![1.0]),
-                SoundCategory::Effects,
-                2.0,
-            )
+            .play_one_shot(clip(4, 1, vec![1.0]), SoundCategory::Effects, 2.0)
             .unwrap();
         assert_eq!(mixer.render_frame(), (1.0, 1.0));
         controller.set_category_volume(SoundCategory::Effects, f32::NAN);

@@ -25,14 +25,13 @@ pub mod prelude {
         Engine, InstrumentConfig, MusicConfig, MusicShared, MusicStatus, MusicStinger,
     };
     pub use crate::preset::{MusicPace, MusicPreset};
-    pub use crate::sound::{
-        AudioBus, AudioClip, AudioClipError, LoopKey, SoundCategory, SoundCommandError,
-        SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError, SoundMixerCreateError,
-        SoundMixerStatus,
-        MAX_SOUND_VOICES,
-    };
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
+    };
+    pub use crate::sound::{
+        AudioBus, AudioClip, AudioClipError, LoopKey, SoundCategory, SoundCommandError,
+        SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError,
+        SoundMixerCreateError, SoundMixerStatus, MAX_SOUND_VOICES,
     };
     pub use crate::theory::{ScaleKind, Theme, ThemeOverrides};
 

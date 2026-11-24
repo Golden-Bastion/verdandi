@@ -33,10 +33,8 @@ pub struct ProceduralMusic {
 
 impl ProceduralMusic {
     pub fn new(config: MusicConfig, shared: Arc<MusicShared>) -> Self {
-        let sound_config = SoundMixerConfig::new(
-            config.sample_rate,
-            SoundMixerConfig::default().max_voices,
-        );
+        let sound_config =
+            SoundMixerConfig::new(config.sample_rate, SoundMixerConfig::default().max_voices);
         let sounds = SoundController::new(sound_config)
             .expect("ProceduralMusic requires a non-zero sample rate");
         Self::with_sound_controller(config, shared, sounds)
@@ -271,8 +269,12 @@ impl AudioController {
     pub fn set_bus_volume(&self, bus: AudioBus, gain: f32) {
         match bus {
             AudioBus::Music => self.shared.set_volume(gain),
-            AudioBus::Effects => self.sounds.set_category_volume(SoundCategory::Effects, gain),
-            AudioBus::Ambience => self.sounds.set_category_volume(SoundCategory::Ambience, gain),
+            AudioBus::Effects => self
+                .sounds
+                .set_category_volume(SoundCategory::Effects, gain),
+            AudioBus::Ambience => self
+                .sounds
+                .set_category_volume(SoundCategory::Ambience, gain),
         }
     }
 
@@ -287,8 +289,12 @@ impl AudioController {
     pub fn set_bus_muted(&self, bus: AudioBus, muted: bool) {
         match bus {
             AudioBus::Music => self.shared.set_muted(muted),
-            AudioBus::Effects => self.sounds.set_category_muted(SoundCategory::Effects, muted),
-            AudioBus::Ambience => self.sounds.set_category_muted(SoundCategory::Ambience, muted),
+            AudioBus::Effects => self
+                .sounds
+                .set_category_muted(SoundCategory::Effects, muted),
+            AudioBus::Ambience => self
+                .sounds
+                .set_category_muted(SoundCategory::Ambience, muted),
         }
     }
 
