@@ -1129,7 +1129,7 @@ impl SoundMixer {
                 } else {
                     stream.status.playing.store(false, Ordering::Release);
                     stream
-                        .shared
+                        .status
                         .consumer_active
                         .store(false, Ordering::Release);
                     self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
