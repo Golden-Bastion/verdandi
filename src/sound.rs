@@ -13,6 +13,7 @@ use std::time::Duration;
 
 const COMMAND_QUEUE_CAPACITY: usize = 64;
 const MAX_COMMANDS_PER_FRAME: usize = COMMAND_QUEUE_CAPACITY;
+/// Maximum number of simultaneous sound voices permitted by [`SoundMixerConfig`].
 pub const MAX_SOUND_VOICES: usize = 128;
 
 /// The independent gain/mute buses exposed by the unified audio controller.
@@ -26,7 +27,7 @@ pub enum AudioBus {
     Ambience,
 }
 
-/// A non-musical routing category handled by SoundMixer.
+/// A non-musical routing category handled by [`SoundMixer`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SoundCategory {
     /// Discrete one-shot effects such as impacts or footsteps.
@@ -64,9 +65,10 @@ pub struct AudioClip {
 }
 
 impl AudioClip {
-    /// Construct a clip from host-decoded PCM samples.
+    /// Construct a clip from host-decoded floating-point PCM samples.
     ///
-    /// Samples are interleaved when channels is 2. Only mono and stereo are supported.
+    /// Stereo samples are interleaved left/right. Mono samples are duplicated to both output
+    /// channels during playback. Only mono and stereo are supported.
     pub fn from_samples(
         sample_rate: u32,
         channels: u16,
@@ -76,6 +78,9 @@ impl AudioClip {
     }
 
     /// Construct a clip from shared host-owned PCM without copying the sample buffer.
+    ///
+    /// The host should retain another owning `Arc<AudioClip>` while the clip may be queued or
+    /// playing, so its final sample allocation is not released by the render callback.
     pub fn from_shared_samples(
         sample_rate: u32,
         channels: u16,
@@ -108,12 +113,10 @@ impl AudioClip {
     }
 
     /// Source sample rate, in frames per second.
-    /// Configured output sample rate, in frames per second.
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
-    /// Number of interleaved channels: one for mono or two for stereo.
     /// Number of interleaved channels: one for mono or two for stereo.
     pub fn channels(&self) -> u16 {
         self.channels
@@ -130,6 +133,7 @@ impl AudioClip {
     }
 }
 
+/// Validation failures returned when constructing an [`AudioClip`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AudioClipError {
     /// The supplied sample rate was zero.
@@ -219,6 +223,7 @@ impl Default for StreamBufferConfig {
     }
 }
 
+/// Validation failures returned by [`StreamBuffer::create`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StreamBufferConfigError {
     /// The configured sample rate was zero.
@@ -255,6 +260,7 @@ impl fmt::Display for StreamBufferConfigError {
 
 impl Error for StreamBufferConfigError {}
 
+/// Invalid-input failures returned by [`StreamWriter::write_interleaved`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StreamWriteError {
     /// The producer has already signaled end-of-stream with [`StreamWriter::finish`].
@@ -402,6 +408,7 @@ impl AudioStream {
     pub fn sample_rate(&self) -> u32 {
         self.shared.config.sample_rate
     }
+    /// Number of interleaved channels: one for mono or two for stereo.
     pub fn channels(&self) -> u16 {
         self.shared.config.channels
     }
@@ -535,6 +542,7 @@ impl Default for SoundMixerConfig {
     }
 }
 
+/// Validation failures returned by [`SoundController::new`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundMixerConfigError {
     /// The configured output sample rate was zero.
@@ -556,6 +564,7 @@ impl fmt::Display for SoundMixerConfigError {
 
 impl Error for SoundMixerConfigError {}
 
+/// Failure to create a second active consumer for one [`SoundController`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundMixerCreateError {
     /// This controller already has an active mixer consuming its queue.
@@ -663,6 +672,7 @@ impl SoundController {
         Ok(SoundMixer::new(self.shared.clone()))
     }
 
+    /// Configured output sample rate, in frames per second.
     pub fn sample_rate(&self) -> u32 {
         self.shared.config.sample_rate
     }
@@ -1003,8 +1013,10 @@ impl SoundMixer {
         }
     }
 
-    /// Render one stereo frame. The host is responsible for mixing this with music and applying
-    /// any final master limiter/clipping policy.
+    /// Render one stereo frame, consuming queued commands and active sound voices.
+    ///
+    /// The host is responsible for mixing this with music and applying any final master
+    /// limiter/clipping policy.
     pub fn render_frame(&mut self) -> (f32, f32) {
         self.process_commands();
 
