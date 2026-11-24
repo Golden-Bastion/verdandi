@@ -173,3 +173,17 @@ Status: **In progress**
 - [x] Define overlapping fade requests as replacement from the current gain.
 - [x] Apply master gain after music, stinger, and preset-transition mixing.
 - [x] Cover pause position preservation, gain clamping, fade progression, and replacement semantics with regression tests.
+
+
+## Environmental ambience and sound effects
+
+- [x] Add host-owned immutable mono/stereo PCM clips with validation and sample-rate conversion.
+- [x] Add bounded one-shot and persistent keyed-loop playback alongside procedural music.
+- [x] Define same-key replacement, per-loop fades, fade-out stopping, and no-stale-loop semantics.
+- [x] Add independent effects and ambience gain/mute controls; expose music/effects/ambience buses through the Bevy controller.
+- [x] Define a bounded 64-command queue, non-blocking concurrent producer behavior, and a configurable voice limit up to 128.
+- [x] Reject newest play requests when the voice pool is full; retain existing voices and publish active/rejected counters.
+- [x] Add regression coverage for clip validation, resampling, ordering, replacement, fades, category isolation, voice limits, and queue overflow.
+- [ ] Define and implement a bounded prebuffered streaming-audio contract for long assets; decoding and file access must remain outside the render callback.
+
+**Current boundary:** the host loads and decodes audio into immutable PCM, retains its asset references while voices play, and submits clip references to Verdandi. The mixer owns playback position, looping, fades, routing, and voice limits. Verdandi does not own the host asset catalogue or distribute recordings.

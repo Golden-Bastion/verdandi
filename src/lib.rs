@@ -12,6 +12,7 @@ pub mod engine;
 pub mod preset;
 pub mod rng;
 pub mod sfz;
+pub mod sound;
 pub mod synth;
 pub mod theory;
 
@@ -24,11 +25,18 @@ pub mod prelude {
         Engine, InstrumentConfig, MusicConfig, MusicShared, MusicStatus, MusicStinger,
     };
     pub use crate::preset::{MusicPace, MusicPreset};
+    pub use crate::sound::{
+        AudioBus, AudioClip, AudioClipError, LoopKey, SoundCategory, SoundCommandError,
+        SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError, SoundMixerStatus,
+        MAX_SOUND_VOICES,
+    };
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
     };
     pub use crate::theory::{ScaleKind, Theme, ThemeOverrides};
 
     #[cfg(feature = "bevy-plugin")]
-    pub use crate::plugin::{MusicController, MusicTrack, ProceduralMusic, ProceduralMusicPlugin};
+    pub use crate::plugin::{
+        AudioController, MusicController, MusicTrack, ProceduralMusic, ProceduralMusicPlugin,
+    };
 }

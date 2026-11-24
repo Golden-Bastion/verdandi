@@ -291,6 +291,7 @@ pub struct MusicShared {
     intensity: AtomicU32,
     auto_intensity: AtomicBool,
     playback_enabled: AtomicBool,
+    muted: AtomicBool,
     target_gain: AtomicU32,
     gain_duration_ms: AtomicU64,
     gain_pending: AtomicBool,
@@ -326,6 +327,7 @@ impl MusicShared {
             intensity: AtomicU32::new(cfg.intensity.clamp(0.0, 1.0).to_bits()),
             auto_intensity: AtomicBool::new(cfg.auto_intensity),
             playback_enabled: AtomicBool::new(true),
+            muted: AtomicBool::new(false),
             target_gain: AtomicU32::new(1.0f32.to_bits()),
             gain_duration_ms: AtomicU64::new(0),
             gain_pending: AtomicBool::new(false),
@@ -437,6 +439,15 @@ impl MusicShared {
 
     pub fn is_playing(&self) -> bool {
         self.playback_enabled.load(Acquire)
+    }
+
+    /// Mute music output without changing its requested gain or transport state.
+    pub fn set_muted(&self, muted: bool) {
+        self.muted.store(muted, Release);
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.muted.load(Acquire)
     }
 
     /// Set master music gain immediately. Values are clamped to 0.0..=1.0.
@@ -827,8 +838,13 @@ impl Engine {
                     self.fade_total_frames = 0;
                 }
             }
-            output.0 *= self.current_gain;
-            output.1 *= self.current_gain;
+            let gain = if self.shared.is_muted() {
+                0.0
+            } else {
+                self.current_gain
+            };
+            output.0 *= gain;
+            output.1 *= gain;
         }
         output
     }

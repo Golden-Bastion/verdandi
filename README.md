@@ -141,6 +141,46 @@ Per-run seeds: `music.set_seed(run_seed)`. Change styles at runtime with `music.
 
 Not using Bevy? Depend on it with `default-features = false` and call `Engine::render_interleaved` from your own audio callback.
 
+## Environmental ambience and sound effects
+
+Verdandi also provides an engine-independent PCM mixer for host-provided one-shot effects and looping environmental sounds. The host loads and decodes its own assets, then creates an immutable mono or stereo `AudioClip`. Verdandi does not bundle recordings, access the filesystem, or decode audio during rendering.
+
+The Bevy plugin exposes the unified `AudioController` resource (the existing `MusicController` name remains a compatible alias). Its music, effects, and ambience buses have independent gain and mute controls. Effects and ambience playback shares a bounded voice pool; the default Bevy configuration allows 32 simultaneous voices.
+
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use verdandi::prelude::*;
+
+fn play_world_audio(
+    audio: &AudioController,
+    decoded_rain_pcm: Vec<f32>,
+    decoded_footstep_pcm: Vec<f32>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rain = Arc::new(AudioClip::from_samples(44_100, 1, decoded_rain_pcm)?);
+    let footstep = Arc::new(AudioClip::from_samples(44_100, 1, decoded_footstep_pcm)?);
+
+    audio.play_loop(
+        LoopKey(10),
+        rain.clone(),
+        SoundCategory::Ambience,
+        0.55,
+        Duration::from_secs(2),
+    )?;
+    audio.play_one_shot(footstep.clone(), SoundCategory::Effects, 0.8)?;
+    audio.set_bus_volume(AudioBus::Ambience, 0.7);
+    audio.fade_loop(LoopKey(10), 0.3, Duration::from_secs(4))?;
+    audio.stop_loop(LoopKey(10), Duration::from_secs(2))?;
+    Ok(())
+}
+```
+
+Keep the host's `Arc<AudioClip>` references in its asset catalogue while sounds can play. This keeps sample storage owned by the host and prevents its final release from occurring in the render callback. Reusing a `LoopKey` replaces that loop from its beginning; fades are linear and a newer fade starts from the currently reached gain. Stopping removes the voice after its fade completes. If the voice limit is reached, the newest play request is rejected and existing voices continue; the controller exposes the active and rejected counts.
+
+The command queue holds 64 requests. Submission never blocks: a full queue returns `QueueFull`, and simultaneous producer contention returns `ProducerBusy` so the caller can retry. The mixer linearly resamples clips to its output rate. This initial path uses pre-decoded PCM only; streamed playback requires a separate bounded prebuffer contract and is not yet provided.
+
+For hosts without Bevy, create a `SoundController`, call `create_mixer()` before starting the audio callback, and mix `SoundMixer::render_frame()` with the music engine's frame output.
+
 ## Layout
 
 | File | Role |
@@ -151,8 +191,9 @@ Not using Bevy? Depend on it with `default-features = false` and call `Engine::r
 | `composer.rs` | Preset-specific layer generators, motif-based melodies and riffs, mutation, repeat/mutate/regenerate policy per layer |
 | `synth.rs` | Small polyphonic synth + drums + stereo delay; no allocation on the hot path |
 | `engine.rs` | Sequencer, `MusicConfig`, lock-free `MusicShared` control/status block |
+| `sound.rs` | Pre-decoded PCM clips, bounded sound command queue, one-shot and keyed-loop mixer |
 | `examples/render_wav.rs` | Headless CLI exporter for fixed-length WAV tracks |
-| `plugin.rs` | Bevy `Decodable` source, `MusicController`, plugin |
+| `plugin.rs` | Bevy `Decodable` source, unified `AudioController`, plugin |
 
 ## Tuning and extending
 
@@ -170,3 +211,4 @@ Not using Bevy? Depend on it with `default-features = false` and call `Engine::r
 - Runtime preset changes crossfade over two seconds; the default waits for the next bar, while the immediate variant starts as soon as the audio callback processes the request. Built-in event stingers are synthesized at runtime and replace one another if retriggered.
 - Seed changes wait for the loop boundary (about 4.6-16.6 s across built-in preset tempo ranges).
 - Intensity gating is note-level, so layers enter on the next note.
+- Non-musical audio currently accepts pre-decoded mono/stereo PCM clips. There is no streaming decoder or bundled sound library yet.
