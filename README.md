@@ -180,7 +180,23 @@ Only one active SoundMixer may consume a SoundController's queue; a second creat
 
 Long assets can use the bounded streaming path. Create a `StreamBuffer` before playback with an explicit capacity and startup prebuffer threshold. Keep its `StreamWriter` on a host worker that performs file access, decoding, and any required resampling; write interleaved mono/stereo PCM at the mixer's output sample rate. Writes are non-blocking and may be partial (including zero frames when full). The worker retries after the consumer advances the ring and calls `finish()` at end-of-stream. Playback waits for the prebuffer threshold, outputs silence on later underflow without blocking, resumes when data arrives, and drains queued frames before ending. A keyed stream can be fed continuously by a looping host decoder and faded/stopped with the existing loop controls.
 
-Each stream has one producer and one active consumer. Keep both the stream handle and writer alive until `AudioStream::is_playing()` becomes false; this prevents the ring allocation from being freed on the render callback. Stream buffers are capped at `MAX_STREAM_BUFFER_FRAMES` (262,144 frames) per stream. The default configuration is 2 seconds of stereo capacity with a 100 ms startup prebuffer at 44.1 kHz.
+Each stream has one producer and one active consumer. Keep both the stream handle and writer alive until `AudioStream::is_active()` becomes false; this prevents the ring allocation from being freed on the render callback. Stream buffers are capped at `MAX_STREAM_BUFFER_FRAMES` (262,144 frames) per stream. The default configuration is 2 seconds of stereo capacity with a 100 ms startup prebuffer at 44.1 kHz.
+
+Example setup for a 48 kHz stereo source:
+
+```rust
+let (mut writer, stream) = StreamBuffer::new(
+    StreamBufferConfig::new(48_000, 2, 96_000, 4_800),
+)?;
+audio.play_stream(stream.clone(), SoundCategory::Ambience, 0.7)?;
+
+// On the decoder worker, write decoded/resampled chunks. Retry any unaccepted tail
+// after the mixer has consumed enough frames.
+let accepted_frames = writer.write_interleaved(&decoded_chunk)?;
+writer.finish(); // after the decoder reaches end-of-stream
+```
+
+A producer should treat a zero-frame write as backpressure, not as an error.
 
 For hosts without Bevy, create a `SoundController`, call `create_mixer()` before starting the audio callback, and mix `SoundMixer::render_frame()` with the music engine's frame output.
 
