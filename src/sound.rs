@@ -528,7 +528,10 @@ pub enum SoundCommandError {
     /// Another producer is submitting a command. No thread waits; the caller may retry later.
     ProducerBusy,
     /// The stream's PCM rate does not match this mixer's output rate.
-    StreamSampleRateMismatch { stream_sample_rate: u32, mixer_sample_rate: u32 },
+    StreamSampleRateMismatch {
+        stream_sample_rate: u32,
+        mixer_sample_rate: u32,
+    },
     /// The stream is already queued for or attached to a mixer voice.
     StreamAlreadyActive,
 }
@@ -1704,13 +1707,14 @@ mod tests {
         assert!(!stream.is_playing());
     }
 
-
     #[test]
     fn stream_reservation_is_released_when_command_queue_is_full() {
         let (controller, _mixer) = system(4, 2);
         let sound = clip(4, 1, vec![0.2; 4]);
         for _ in 0..COMMAND_QUEUE_CAPACITY {
-            controller.play_one_shot(sound.clone(), SoundCategory::Effects, 1.0).unwrap();
+            controller
+                .play_one_shot(sound.clone(), SoundCategory::Effects, 1.0)
+                .unwrap();
         }
         let (_, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
         assert_eq!(
@@ -1723,9 +1727,13 @@ mod tests {
     #[test]
     fn stream_voice_limit_rejection_releases_stream_reservation() {
         let (controller, mut mixer) = system(4, 1);
-        controller.play_one_shot(clip(4, 1, vec![0.2; 8]), SoundCategory::Effects, 1.0).unwrap();
+        controller
+            .play_one_shot(clip(4, 1, vec![0.2; 8]), SoundCategory::Effects, 1.0)
+            .unwrap();
         let (_, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
-        controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0).unwrap();
+        controller
+            .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
+            .unwrap();
         mixer.render_frame();
         assert!(!stream.is_active());
         assert_eq!(controller.status().rejected_voices, 1);
@@ -1737,7 +1745,9 @@ mod tests {
         let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 2, 4, 1)).unwrap();
         writer.write_interleaved(&[0.25, -0.5]).unwrap();
         writer.finish();
-        controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0).unwrap();
+        controller
+            .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
+            .unwrap();
         assert_eq!(mixer.render_frame(), (0.25, -0.5));
         assert_eq!(mixer.render_frame(), (0.0, 0.0));
         assert!(!stream.is_active());
