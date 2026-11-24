@@ -108,7 +108,7 @@ fn enter_combat(audio: Res<AudioController>) {
     audio.set_preset(MusicPreset::HeavyMetal, MusicPace::Fast);
     audio.play_stinger(MusicStinger::CombatStart);
     audio.fade_to(0.8, Duration::from_secs(1));
-    audio.set_layer_enabled(Layer::Choir, false);
+    audio.set_layer_enabled(Layer::RhythmGuitar, false);
 }
 ~~~
 
