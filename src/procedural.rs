@@ -182,7 +182,6 @@ impl ProceduralGenerator for RainGenerator {
                 drop.decay = 2.5 + self.rng.next_f32() * 4.5;
                 drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
                 drop.phase = 0.0;
-                drop.phase = 0.0;
                 drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
             }
@@ -256,7 +255,7 @@ pub struct ImpactConfig {
     /// Impact strength, 0.0..=1.0.
     pub intensity: f32,
     /// Tonal body amount, 0.0..=1.0.
-    /// Tonal body amount, 0.0..=1.0.\n    pub resonance: f32,
+    pub resonance: f32,
 }
 impl Default for ImpactConfig {
     fn default() -> Self { Self { sample_rate: 44_100, intensity: 0.8, resonance: 0.55 } }
@@ -326,6 +325,12 @@ mod tests {
         let rain_samples = render(&mut rain_a, 2048);
         assert_eq!(rain_samples, render(&mut rain_b, 2048));
         bounded(&rain_samples);
+        let mut rain_whole = RainGenerator::new(RainConfig::default(), 77).unwrap();
+        let mut rain_split = RainGenerator::new(RainConfig::default(), 77).unwrap();
+        let expected_rain = render(&mut rain_whole, 4096);
+        let mut actual_rain = render(&mut rain_split, 1024);
+        actual_rain.extend(render(&mut rain_split, 3072));
+        assert_eq!(expected_rain, actual_rain);
         assert!(rain_samples.iter().any(|sample| sample.abs() > 0.001));
     }
 
