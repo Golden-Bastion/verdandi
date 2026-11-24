@@ -63,6 +63,8 @@ fn build_audio_path() -> Result<AudioPath, Box<dyn std::error::Error>> {
 }
 ~~~
 
+At host startup, keep the returned `AudioPath.controls` in the gameplay/control side and move `AudioPath.music` plus `AudioPath.sounds` into the audio callback. Clone the controller when more than one gameplay system or worker needs a command handle. The callback is the sole owner of the mutable engine and mixer.
+
 For each output frame, render music and effects and combine them:
 
 ~~~rust
