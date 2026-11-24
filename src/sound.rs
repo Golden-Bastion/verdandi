@@ -47,6 +47,10 @@ impl SoundCategory {
 pub struct LoopKey(pub u64);
 
 /// Immutable interleaved mono or stereo PCM prepared by the host.
+///
+/// Keep an owning `Arc<AudioClip>` in the host's asset catalogue while a clip may be queued or
+/// playing. This ensures playback completion or replacement on the render thread cannot release
+/// the final sample-buffer allocation there.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioClip {
     sample_rate: u32,
@@ -238,7 +242,9 @@ pub struct SoundMixerStatus {
 
 /// Control-side handle for submitting sound playback commands.
 ///
-/// Create exactly one active SoundMixer for each controller. Commands are placed in a bounded queue. Concurrent producers are serialized with a
+/// Create exactly one active SoundMixer for each controller.
+///
+/// Commands are placed in a bounded queue. Concurrent producers are serialized with a
 /// non-blocking atomic gate: a contending caller receives ProducerBusy instead of making the
 /// audio thread wait or spin.
 #[derive(Clone)]
