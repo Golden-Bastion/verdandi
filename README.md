@@ -185,7 +185,7 @@ Each stream has one producer and one active consumer. Keep both the stream handl
 Example setup for a 48 kHz stereo source:
 
 ```rust
-let (mut writer, stream) = StreamBuffer::new(
+let (mut writer, stream) = StreamBuffer::create(
     StreamBufferConfig::new(48_000, 2, 96_000, 4_800),
 )?;
 audio.play_stream(stream.clone(), SoundCategory::Ambience, 0.7)?;

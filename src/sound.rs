@@ -259,7 +259,7 @@ pub struct StreamBuffer;
 
 impl StreamBuffer {
     /// Allocate the ring before playback and return its single producer and shared stream handle.
-    pub fn new(
+    pub fn create(
         config: StreamBufferConfig,
     ) -> Result<(StreamWriter, Arc<AudioStream>), StreamBufferConfigError> {
         if config.sample_rate == 0 {
@@ -359,7 +359,7 @@ impl StreamWriter {
 }
 
 /// Shared handle submitted to the mixer. Keep this handle and its StreamWriter alive until
-/// is_playing() becomes false; that keeps ring-buffer storage from being deallocated by the
+/// is_active() becomes false; that keeps ring-buffer storage from being deallocated by the
 /// render callback when a stream finishes or is stopped.
 pub struct AudioStream {
     shared: Arc<StreamShared>,
@@ -1596,7 +1596,7 @@ mod tests {
     #[test]
     fn stream_waits_for_prebuffer_then_drains_after_finish() {
         let (controller, mut mixer) = system(4, 2);
-        let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
         assert_eq!(writer.write_interleaved(&[0.1, 0.2]), Ok(2));
         controller
             .play_stream(stream.clone(), SoundCategory::Ambience, 1.0)
@@ -1622,7 +1622,7 @@ mod tests {
     #[test]
     fn stream_underflow_outputs_silence_and_resumes_when_fed() {
         let (controller, mut mixer) = system(4, 1);
-        let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
         writer.write_interleaved(&[0.5]).unwrap();
         controller
             .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
@@ -1638,7 +1638,7 @@ mod tests {
 
     #[test]
     fn stream_writer_is_bounded_and_reports_partial_writes() {
-        let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 2, 2, 1)).unwrap();
+        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 2, 2, 1)).unwrap();
         assert_eq!(
             writer.write_interleaved(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
             Ok(2)
@@ -1662,7 +1662,7 @@ mod tests {
     #[test]
     fn stream_requires_mixer_sample_rate_and_finishes_short_prebuffer() {
         let (controller, mut mixer) = system(8, 1);
-        let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
         assert_eq!(
             controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0),
             Err(SoundCommandError::StreamSampleRateMismatch {
@@ -1683,7 +1683,7 @@ mod tests {
     #[test]
     fn keyed_stream_loop_supports_fade_and_stop() {
         let (controller, mut mixer) = system(4, 1);
-        let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 8, 1)).unwrap();
+        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 8, 1)).unwrap();
         writer.write_interleaved(&[1.0; 8]).unwrap();
         controller
             .play_stream_loop(
@@ -1713,7 +1713,7 @@ mod tests {
                 .play_one_shot(sound.clone(), SoundCategory::Effects, 1.0)
                 .unwrap();
         }
-        let (_, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        let (_, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
         assert_eq!(
             controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0),
             Err(SoundCommandError::QueueFull)
@@ -1727,7 +1727,7 @@ mod tests {
         controller
             .play_one_shot(clip(4, 1, vec![0.2; 8]), SoundCategory::Effects, 1.0)
             .unwrap();
-        let (_, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        let (_, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
         controller
             .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
             .unwrap();
@@ -1739,7 +1739,7 @@ mod tests {
     #[test]
     fn streaming_stereo_frames_preserve_channel_separation() {
         let (controller, mut mixer) = system(4, 1);
-        let (mut writer, stream) = StreamBuffer::new(StreamBufferConfig::new(4, 2, 4, 1)).unwrap();
+        let (mut writer, stream) = StreamBuffer::create(StreamBufferConfig::new(4, 2, 4, 1)).unwrap();
         writer.write_interleaved(&[0.25, -0.5]).unwrap();
         writer.finish();
         controller
@@ -1754,7 +1754,7 @@ mod tests {
     fn stream_ring_preserves_frame_order_with_concurrent_producer() {
         let (controller, mut mixer) = system(48_000, 1);
         let (mut writer, stream) =
-            StreamBuffer::new(StreamBufferConfig::new(48_000, 1, 8, 1)).unwrap();
+            StreamBuffer::create(StreamBufferConfig::new(48_000, 1, 8, 1)).unwrap();
         controller
             .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
             .unwrap();
@@ -1793,15 +1793,15 @@ mod tests {
     #[test]
     fn stream_config_and_finished_writer_are_validated() {
         assert!(matches!(
-            StreamBuffer::new(StreamBufferConfig::new(0, 1, 4, 1)),
+            StreamBuffer::create(StreamBufferConfig::new(0, 1, 4, 1)),
             Err(StreamBufferConfigError::InvalidSampleRate)
         ));
         assert!(matches!(
-            StreamBuffer::new(StreamBufferConfig::new(4, 3, 4, 1)),
+            StreamBuffer::create(StreamBufferConfig::new(4, 3, 4, 1)),
             Err(StreamBufferConfigError::UnsupportedChannelCount(3))
         ));
         assert!(matches!(
-            StreamBuffer::new(StreamBufferConfig::new(
+            StreamBuffer::create(StreamBufferConfig::new(
                 4,
                 1,
                 MAX_STREAM_BUFFER_FRAMES + 1,
@@ -1810,10 +1810,10 @@ mod tests {
             Err(StreamBufferConfigError::InvalidCapacity { .. })
         ));
         assert!(matches!(
-            StreamBuffer::new(StreamBufferConfig::new(4, 1, 2, 3)),
+            StreamBuffer::create(StreamBufferConfig::new(4, 1, 2, 3)),
             Err(StreamBufferConfigError::InvalidPrebuffer { .. })
         ));
-        let (mut writer, _) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 2, 1)).unwrap();
+        let (mut writer, _) = StreamBuffer::create(StreamBufferConfig::new(4, 1, 2, 1)).unwrap();
         writer.finish();
         assert_eq!(
             writer.write_interleaved(&[0.1]),
