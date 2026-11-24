@@ -175,9 +175,14 @@ fn feed_decoded_chunks(
     stream: Arc<AudioStream>,
     decoded_chunks: impl IntoIterator<Item = Vec<f32>>,
 ) -> Result<(), StreamWriteError> {
-    for chunk in decoded_chunks {
-        write_all_frames(&mut writer, &chunk, 2)?;
-    }
+    // Capture write errors so the writer can still signal EOF and retain both
+    // handles until the mixer has drained/released the stream.
+    let write_result = (|| {
+        for chunk in decoded_chunks {
+            write_all_frames(&mut writer, &chunk, 2)?;
+        }
+        Ok::<(), StreamWriteError>(())
+    })();
 
     writer.finish();
 
@@ -186,7 +191,7 @@ fn feed_decoded_chunks(
         std::thread::sleep(Duration::from_millis(2));
     }
 
-    Ok(())
+    write_result
 }
 ~~~
 
