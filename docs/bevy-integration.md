@@ -76,17 +76,17 @@ use verdandi::prelude::{AudioBus, AudioClip, AudioController, LoopKey, SoundCate
 
 fn play_world_audio(
     audio: &AudioController,
-    rain: Arc<AudioClip>,
-    footstep: Arc<AudioClip>,
+    rain: &Arc<AudioClip>,
+    footstep: &Arc<AudioClip>,
 ) -> Result<(), verdandi::sound::SoundCommandError> {
     audio.play_loop(
         LoopKey(100),
-        rain,
+        rain.clone(),
         SoundCategory::Ambience,
         0.55,
         Duration::from_secs(2),
     )?;
-    audio.play_one_shot(footstep, SoundCategory::Effects, 0.9)?;
+    audio.play_one_shot(footstep.clone(), SoundCategory::Effects, 0.9)?;
     audio.set_bus_volume(AudioBus::Ambience, 0.7);
     audio.set_bus_muted(AudioBus::Effects, false);
     Ok(())
