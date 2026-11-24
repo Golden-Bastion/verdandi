@@ -135,9 +135,9 @@ impl Default for RainConfig {
 }
 const DROP_VOICES: usize = 8;
 #[derive(Clone, Copy)]
-struct Drop { age: f32, decay: f32, amplitude: f32 }
+struct Drop { age: f32, decay: f32, amplitude: f32, phase: f32, phase_step: f32 }
 impl Drop {
-    const SILENT: Self = Self { age: 1.0, decay: 1.0, amplitude: 0.0 };
+    const SILENT: Self = Self { age: 1.0, decay: 1.0, amplitude: 0.0, phase: 0.0, phase_step: 0.0 };
     fn tick(&mut self, age_step: f32) -> f32 {
         if self.age >= 1.0 { return 0.0; }
         let out = self.amplitude * (-self.age * self.decay).exp() * (TAU * (0.08 + self.age * 0.9)).sin();
@@ -179,7 +179,7 @@ impl ProceduralGenerator for RainGenerator {
                 let drop = &mut self.drops[self.next_drop];
                 drop.age = 0.0;
                 drop.decay = 2.5 + self.rng.next_f32() * 4.5;
-                drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
+                drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);\n                drop.phase = 0.0;\n                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
             }
             let age_step = 1.0 / (self.sample_rate * 0.055);
@@ -252,7 +252,7 @@ pub struct ImpactConfig {
     /// Impact strength, 0.0..=1.0.
     pub intensity: f32,
     /// Tonal body amount, 0.0..=1.0.
-    pub resonance: f32,
+    /// Tonal body amount, 0.0..=1.0.\n    pub resonance: f32,
 }
 impl Default for ImpactConfig {
     fn default() -> Self { Self { sample_rate: 44_100, intensity: 0.8, resonance: 0.55 } }
