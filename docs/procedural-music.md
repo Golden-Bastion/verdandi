@@ -82,9 +82,14 @@ Automatic intensity is enabled by default and evolves across **auto_intensity_pe
 To take direct control, disable automatic intensity and set a value from 0.0 to 1.0:
 
 ~~~rust
-audio.set_auto_intensity(false);
-audio.set_intensity(0.85);
-audio.set_layer_enabled(Layer::Lead, false);
+use bevy::prelude::Res;
+use verdandi::prelude::{AudioController, Layer};
+
+fn tune_intensity(audio: Res<AudioController>) {
+    audio.set_auto_intensity(false);
+    audio.set_intensity(0.85);
+    audio.set_layer_enabled(Layer::Lead, false);
+}
 ~~~
 
 The example above uses the Bevy **AudioController**; the same operations are available on **MusicShared** in a custom host. Values are clamped to the supported range.
