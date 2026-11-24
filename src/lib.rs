@@ -1,8 +1,12 @@
 //! # verdandi
 //!
-//! Layered procedural music driven by a seed. The seed fixes the musical frame (key, mode, tempo,
-//! chord progression); each layer (drums, bass, pad, arp, lead) then repeats, mutates or
-//! regenerates its pattern every 4-bar loop. Same seed => same evolving track.
+//! A reusable, deterministic game-audio engine. It provides layered procedural music, procedural
+//! gameplay sound generation, host-provided PCM playback, and bounded audio streaming.
+//!
+//! The core is independent of any particular game's entities, event system, world simulation, or
+//! asset catalogue. Gameplay code decides when sounds occur; Verdandi provides reusable audio
+//! generation and playback behavior. The same seed, configuration, and render sequence reproduce
+//! the same generated output.
 //!
 //! * `rng`, `theory`, `composer`, `synth`, `engine`, `procedural`, `sound`: engine-agnostic core (no Bevy dependency).
 //! * `plugin` (feature `bevy-plugin`, on by default): Bevy audio source + unified audio controller.
