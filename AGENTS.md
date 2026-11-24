@@ -23,10 +23,13 @@ Before changing code, inspect the relevant source, tests, examples, and document
 
 Use repository documentation according to its responsibility:
 
-- `README.md`: public capabilities, usage, examples, layout, and known limitations.
-- `CHANGELOG.md`: record of completed changes, following the existing format.
-- Rust API documentation and source comments: contracts and behaviour of public interfaces.
+- `README.md`: concise project overview, capabilities, dependency/quick-start example, links to guides, examples, and current boundaries.
+- `docs/`: the user-facing integration manual. Explain how to install, configure, and use each supported subsystem with complete workflows, examples, ownership rules, error handling, and real-time constraints. Organize pages by user task rather than source-file layout.
+- Rust API documentation and source comments: symbol-level contracts, parameter meanings, invariants, and precise method behaviour. Public types and methods should have useful rustdoc comments; the guides do not replace API reference documentation.
+- `CHANGELOG.md`: record of completed changes, following the existing format when the file is present.
 - Tests and fixtures: executable expectations for deterministic behaviour, parsing, synthesis, and integration.
+
+Documentation should let an application developer integrate Verdandi without reading the implementation. Keep examples aligned with the current public API, explain who owns each resource and on which thread work occurs, and state limitations explicitly. Avoid duplicating long guides in the README; link to the responsible page in `docs/`.
 
 Do not assume an old issue, conversation, or plan overrides the current repository state. When documentation conflicts with implementation or tests, investigate the discrepancy rather than silently choosing one.
 
