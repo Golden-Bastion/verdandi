@@ -802,10 +802,8 @@ impl Engine {
                 self.fade_start_gain = self.current_gain;
                 self.fade_target_gain = target;
                 self.fade_elapsed_frames = 0;
-                self.fade_total_frames = duration_ms
-                    .saturating_mul(u64::from(self.sample_rate))
-                    .checked_div(1_000)
-                    .unwrap_or(0);
+                self.fade_total_frames =
+                    duration_ms.saturating_mul(u64::from(self.sample_rate)) / 1_000;
                 if self.fade_total_frames == 0 {
                     self.current_gain = target;
                 }

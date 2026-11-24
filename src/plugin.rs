@@ -100,6 +100,36 @@ impl MusicController {
         &self.shared
     }
 
+    /// Pause music transport without advancing musical time.
+    pub fn pause(&self) {
+        self.shared.pause();
+    }
+
+    /// Resume music transport from its paused position.
+    pub fn resume(&self) {
+        self.shared.resume();
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.shared.is_playing()
+    }
+
+    /// Set master music gain immediately. Values are clamped to 0.0..=1.0.
+    pub fn set_volume(&self, volume: f32) {
+        self.shared.set_volume(volume);
+    }
+
+    /// The requested master music gain, including an in-progress fade.
+    pub fn volume(&self) -> f32 {
+        self.shared.volume()
+    }
+
+    /// Fade master music gain linearly to the requested value.
+    /// A new request replaces any active fade from its current gain.
+    pub fn fade_to(&self, volume: f32, duration: Duration) {
+        self.shared.fade_to(volume, duration);
+    }
+
     /// Queue a new seed; it takes over at the next loop boundary.
     pub fn set_seed(&self, seed: u64) {
         self.shared.request_seed(seed);
