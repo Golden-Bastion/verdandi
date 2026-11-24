@@ -54,7 +54,7 @@ Start with the [documentation index](docs/README.md). It contains integration gu
 
 - [Getting started](docs/getting-started.md)
 - [Procedural music](docs/procedural-music.md)
-- [Sound effects and ambience](docs/sound-effects.md)
+- [Procedural sound generation](docs/procedural-audio.md) · [Sound effects and ambience](docs/sound-effects.md)
 - [SFZ instruments](docs/sfz-instruments.md)
 - [Bevy integration](docs/bevy-integration.md)
 - [Custom audio hosts](docs/custom-audio-hosts.md)
