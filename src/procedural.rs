@@ -322,8 +322,8 @@ mod tests {
         assert_eq!(expected, actual);
         let mut rain_a = RainGenerator::new(RainConfig::default(), 91).unwrap();
         let mut rain_b = RainGenerator::new(RainConfig::default(), 91).unwrap();
-        let rain_samples = render(&mut rain_a, 2048);
-        assert_eq!(rain_samples, render(&mut rain_b, 2048));
+        let rain_samples = render(&mut rain_a, 8192);
+        assert_eq!(rain_samples, render(&mut rain_b, 8192));
         bounded(&rain_samples);
         let mut rain_whole = RainGenerator::new(RainConfig::default(), 77).unwrap();
         let mut rain_split = RainGenerator::new(RainConfig::default(), 77).unwrap();
