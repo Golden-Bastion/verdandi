@@ -468,7 +468,10 @@ impl MusicShared {
 
     fn take_gain_request(&self) -> Option<(f32, u64)> {
         if self.gain_pending.swap(false, Acquire) {
-            Some((load_f32(&self.target_gain), self.gain_duration_ms.load(Relaxed)))
+            Some((
+                load_f32(&self.target_gain),
+                self.gain_duration_ms.load(Relaxed),
+            ))
         } else {
             None
         }
@@ -985,6 +988,7 @@ mod tests {
         for _ in 0..128 {
             engine.render_frame();
         }
+        let frames_to_next_step = engine.countdown.ceil() as usize + 1;
         shared.pause();
         let paused_status = shared.status();
         for _ in 0..4_096 {
@@ -993,7 +997,9 @@ mod tests {
         assert_eq!(shared.status().step, paused_status.step);
         assert!(!shared.is_playing());
         shared.resume();
-        engine.render_frame();
+        for _ in 0..frames_to_next_step {
+            engine.render_frame();
+        }
         assert!(shared.is_playing());
         assert_ne!(shared.status().step, paused_status.step);
     }
