@@ -95,7 +95,7 @@ impl AudioClip {
         if samples.is_empty() {
             return Err(AudioClipError::Empty);
         }
-        if samples.len() % usize::from(channels) != 0 {
+        if !samples.len().is_multiple_of(usize::from(channels)) {
             return Err(AudioClipError::IncompleteFrame {
                 sample_count: samples.len(),
                 channels,
@@ -354,7 +354,7 @@ impl StreamWriter {
             return Err(StreamWriteError::Finished);
         }
         let channels = usize::from(self.shared.config.channels);
-        if samples.len() % channels != 0 {
+        if !samples.len().is_multiple_of(channels) {
             return Err(StreamWriteError::IncompleteFrame {
                 sample_count: samples.len(),
                 channels: self.shared.config.channels,
@@ -1063,7 +1063,7 @@ impl SoundMixer {
     ///
     /// Any trailing sample that does not form a complete stereo frame is left untouched.
     pub fn render_interleaved(&mut self, out: &mut [f32]) {
-        for frame in out.chunks_exact_mut(2) {
+        for frame in out.as_chunks_mut::<2>().0 {
             let (left, right) = self.render_frame();
             frame[0] = left;
             frame[1] = right;
@@ -1746,14 +1746,16 @@ mod tests {
                 mixer_sample_rate: 8
             })
         );
-        writer.write_interleaved(&[0.4]).unwrap();
-        writer.finish();
+        let (mut matching_writer, matching_stream) =
+            StreamBuffer::create(StreamBufferConfig::new(8, 1, 4, 3)).unwrap();
+        matching_writer.write_interleaved(&[0.4]).unwrap();
+        matching_writer.finish();
         controller
-            .play_stream(stream.clone(), SoundCategory::Effects, 1.0)
+            .play_stream(matching_stream.clone(), SoundCategory::Effects, 1.0)
             .unwrap();
         assert_eq!(mixer.render_frame(), (0.4, 0.4));
         assert_eq!(mixer.render_frame(), (0.0, 0.0));
-        assert!(!stream.is_playing());
+        assert!(!matching_stream.is_playing());
     }
 
     #[test]
