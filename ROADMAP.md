@@ -164,3 +164,12 @@ Status: **In progress**
 - **First instrument order:** validate the Spanish Classical Guitar, then electric guitar and bowed-string mappings according to their feature and audio-format requirements.
 - **Downstream licensing:** licensing review for audio use in Ashen Chronicle or other games is outside Verdandi's sample-engine implementation milestone because Verdandi does not distribute sample recordings.
 - **Versioning:** the new public SFZ and instrument configuration API is on the 0.6.0 development line.
+
+
+## Runtime transport and gain controls
+
+- [x] Expose engine-independent pause/resume controls that freeze musical transport without discarding synthesis state.
+- [x] Expose bounded master gain with immediate setting and linear fades.
+- [x] Define overlapping fade requests as replacement from the current gain.
+- [x] Apply master gain after music, stinger, and preset-transition mixing.
+- [x] Cover pause position preservation, gain clamping, fade progression, and replacement semantics with regression tests.

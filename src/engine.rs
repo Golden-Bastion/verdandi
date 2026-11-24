@@ -7,6 +7,7 @@ use std::f32::consts::TAU;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::composer::{Composer, Layer, LayerAction, LoopPlan, STEPS_PER_BAR, STEPS_PER_LOOP};
 use crate::preset::{MusicPace, MusicPreset};
@@ -289,6 +290,10 @@ pub struct MusicShared {
     layer_mask: AtomicU32,
     intensity: AtomicU32,
     auto_intensity: AtomicBool,
+    playback_enabled: AtomicBool,
+    target_gain: AtomicU32,
+    gain_duration_ms: AtomicU64,
+    gain_pending: AtomicBool,
     // audio -> game
     cur_seed: AtomicU64,
     loop_index: AtomicU64,
@@ -320,6 +325,10 @@ impl MusicShared {
             layer_mask: AtomicU32::new(mask),
             intensity: AtomicU32::new(cfg.intensity.clamp(0.0, 1.0).to_bits()),
             auto_intensity: AtomicBool::new(cfg.auto_intensity),
+            playback_enabled: AtomicBool::new(true),
+            target_gain: AtomicU32::new(1.0f32.to_bits()),
+            gain_duration_ms: AtomicU64::new(0),
+            gain_pending: AtomicBool::new(false),
             cur_seed: AtomicU64::new(cfg.seed),
             loop_index: AtomicU64::new(0),
             step: AtomicU32::new(0),
@@ -416,6 +425,58 @@ impl MusicShared {
         load_f32(&self.intensity)
     }
 
+    /// Pause transport without advancing musical time or discarding synth state.
+    pub fn pause(&self) {
+        self.playback_enabled.store(false, Release);
+    }
+
+    /// Resume transport from the exact position at which it was paused.
+    pub fn resume(&self) {
+        self.playback_enabled.store(true, Release);
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.playback_enabled.load(Acquire)
+    }
+
+    /// Set master music gain immediately. Values are clamped to 0.0..=1.0.
+    pub fn set_volume(&self, volume: f32) {
+        self.request_gain(volume, 0);
+    }
+
+    /// The requested master music gain, including a fade that is still in progress.
+    pub fn volume(&self) -> f32 {
+        load_f32(&self.target_gain)
+    }
+
+    /// Fade master music gain linearly to `volume`. A new request replaces any active fade.
+    pub fn fade_to(&self, volume: f32, duration: Duration) {
+        let duration_ms = duration.as_millis().min(u128::from(u64::MAX)) as u64;
+        self.request_gain(volume, duration_ms);
+    }
+
+    fn request_gain(&self, volume: f32, duration_ms: u64) {
+        let volume = if volume.is_nan() {
+            0.0
+        } else {
+            volume.clamp(0.0, 1.0)
+        };
+        store_f32(&self.target_gain, volume);
+        self.gain_duration_ms.store(duration_ms, Relaxed);
+        self.gain_pending.store(true, Release);
+    }
+
+    fn take_gain_request(&self) -> Option<(f32, u64)> {
+        if self.gain_pending.swap(false, Acquire) {
+            Some((
+                load_f32(&self.target_gain),
+                self.gain_duration_ms.load(Relaxed),
+            ))
+        } else {
+            None
+        }
+    }
+
     pub fn set_auto_intensity(&self, on: bool) {
         self.auto_intensity.store(on, Relaxed);
     }
@@ -508,6 +569,11 @@ pub struct Engine {
     active_stinger: Option<MusicStinger>,
     stinger_step: u8,
     stinger_countdown: f64,
+    current_gain: f32,
+    fade_start_gain: f32,
+    fade_target_gain: f32,
+    fade_elapsed_frames: u64,
+    fade_total_frames: u64,
 }
 
 impl Engine {
@@ -564,6 +630,11 @@ impl Engine {
             active_stinger: None,
             stinger_step: 0,
             stinger_countdown: 0.0,
+            current_gain: 1.0,
+            fade_start_gain: 1.0,
+            fade_target_gain: 1.0,
+            fade_elapsed_frames: 0,
+            fade_total_frames: 0,
         };
         if publish_status {
             engine.publish_theme();
@@ -733,7 +804,39 @@ impl Engine {
         }
         self.stinger_synth.render_frame()
     }
+    fn apply_gain(&mut self, mut output: (f32, f32)) -> (f32, f32) {
+        if self.publish_status {
+            if let Some((target, duration_ms)) = self.shared.take_gain_request() {
+                self.fade_start_gain = self.current_gain;
+                self.fade_target_gain = target;
+                self.fade_elapsed_frames = 0;
+                self.fade_total_frames =
+                    duration_ms.saturating_mul(u64::from(self.sample_rate)) / 1_000;
+                if self.fade_total_frames == 0 {
+                    self.current_gain = target;
+                }
+            }
+            if self.fade_total_frames > 0 {
+                self.fade_elapsed_frames = self.fade_elapsed_frames.saturating_add(1);
+                let progress = (self.fade_elapsed_frames as f32 / self.fade_total_frames as f32)
+                    .clamp(0.0, 1.0);
+                self.current_gain = self.fade_start_gain
+                    + (self.fade_target_gain - self.fade_start_gain) * progress;
+                if self.fade_elapsed_frames >= self.fade_total_frames {
+                    self.current_gain = self.fade_target_gain;
+                    self.fade_total_frames = 0;
+                }
+            }
+            output.0 *= self.current_gain;
+            output.1 *= self.current_gain;
+        }
+        output
+    }
+
     pub fn render_frame(&mut self) -> (f32, f32) {
+        if !self.shared.is_playing() {
+            return (0.0, 0.0);
+        }
         if self.publish_status {
             if let Some(stinger) = self.shared.take_stinger_request() {
                 self.start_stinger(stinger);
@@ -772,7 +875,7 @@ impl Engine {
         let stinger = self.render_stinger();
         outgoing.0 = (outgoing.0 + stinger.0 * 0.55).tanh();
         outgoing.1 = (outgoing.1 + stinger.1 * 0.55).tanh();
-        if let Some(incoming) = self.transition.as_mut() {
+        let output = if let Some(incoming) = self.transition.as_mut() {
             let target = incoming.render_frame();
             let t =
                 (self.transition_elapsed as f32 / self.transition_frames as f32).clamp(0.0, 1.0);
@@ -790,7 +893,8 @@ impl Engine {
             mixed
         } else {
             outgoing
-        }
+        };
+        self.apply_gain(output)
     }
 
     /// Fill `out` with interleaved stereo (L, R, L, R, ...) samples.
@@ -874,6 +978,67 @@ mod tests {
                 .iter()
                 .all(|note| note.step < 18 && (0..=2).contains(&note.octave)));
         }
+    }
+
+    #[test]
+    fn pause_freezes_transport_and_outputs_silence() {
+        let cfg = MusicConfig::default();
+        let shared = Arc::new(MusicShared::new(&cfg));
+        let mut engine = Engine::new(shared.clone(), &cfg);
+        for _ in 0..128 {
+            engine.render_frame();
+        }
+        let frames_to_next_step = engine.countdown.ceil() as usize + 1;
+        shared.pause();
+        let paused_status = shared.status();
+        for _ in 0..4_096 {
+            assert_eq!(engine.render_frame(), (0.0, 0.0));
+        }
+        assert_eq!(shared.status().step, paused_status.step);
+        assert!(!shared.is_playing());
+        shared.resume();
+        for _ in 0..frames_to_next_step {
+            engine.render_frame();
+        }
+        assert!(shared.is_playing());
+        assert_ne!(shared.status().step, paused_status.step);
+    }
+
+    #[test]
+    fn volume_is_clamped_and_fades_can_be_replaced() {
+        let cfg = MusicConfig::default();
+        let shared = Arc::new(MusicShared::new(&cfg));
+        let mut engine = Engine::new(shared.clone(), &cfg);
+
+        shared.set_volume(2.0);
+        engine.render_frame();
+        assert_eq!(shared.volume(), 1.0);
+        assert_eq!(engine.current_gain, 1.0);
+        shared.set_volume(f32::NAN);
+        engine.render_frame();
+        assert_eq!(shared.volume(), 0.0);
+        assert_eq!(engine.current_gain, 0.0);
+        shared.set_volume(1.0);
+        engine.render_frame();
+
+        shared.fade_to(-1.0, Duration::from_secs(1));
+        for _ in 0..4_410 {
+            engine.render_frame();
+        }
+        assert!(engine.current_gain > 0.0 && engine.current_gain < 1.0);
+
+        let gain_at_replacement = engine.current_gain;
+        shared.fade_to(0.5, Duration::from_millis(100));
+        for _ in 0..4_410 {
+            engine.render_frame();
+        }
+        assert!((engine.current_gain - 0.5).abs() < f32::EPSILON);
+        assert!(gain_at_replacement > 0.0);
+        assert_eq!(shared.volume(), 0.5);
+
+        shared.set_volume(0.25);
+        engine.render_frame();
+        assert_eq!(engine.current_gain, 0.25);
     }
 
     #[test]
