@@ -106,9 +106,14 @@ use bevy::audio::AudioSink;
 use bevy::prelude::*;
 use verdandi::prelude::MusicTrack;
 
-fn inspect_music_sink(sinks: Query<&AudioSink, With<MusicTrack>>) {
-    if let Ok(sink) = sinks.single() {
-        let _is_paused_at_sink_level = sink.is_paused();
+fn toggle_host_sink(
+    keys: Res<ButtonInput<KeyCode>>,
+    sinks: Query<&AudioSink, With<MusicTrack>>,
+) {
+    if keys.just_pressed(KeyCode::Space) {
+        if let Ok(sink) = sinks.single() {
+            sink.toggle_playback();
+        }
     }
 }
 ~~~
