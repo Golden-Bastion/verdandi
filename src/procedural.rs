@@ -173,7 +173,8 @@ impl ProceduralGenerator for RainGenerator {
                 drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
             }
-            let age_step = 1.0 / (self.sample_rate * 0.055);\n            let drops: f32 = self.drops.iter_mut().map(|drop| drop.tick(age_step)).sum();
+            let age_step = 1.0 / (self.sample_rate * 0.055);
+            let drops: f32 = self.drops.iter_mut().map(|drop| drop.tick(age_step)).sum();
             let sample = (hiss + drops * 0.12) * self.intensity;
             frame[0] = sample.clamp(-1.0, 1.0);
             frame[1] = frame[0];
