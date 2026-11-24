@@ -189,4 +189,17 @@ Status: **In progress**
 - [x] Support keyed streamed ambience with existing fade/stop controls; keep decoding and resampling on the host worker at the mixer output rate.
 
 **Current boundary:** the host owns its asset catalogue and performs file access, decoding, and stream resampling on worker threads. It supplies immutable resident clips or writes decoded output-rate frames into bounded stream buffers. Verdandi owns playback, prebuffer thresholds, underflow handling, fades, routing, and voice limits; it never accesses files or decodes in the render callback.
-\n\n## Procedural sound generation\n\n- [x] Add a dedicated engine-independent procedural sound module with caller-buffer stereo rendering.\n- [x] Add deterministic wind and rain ambience generators.\n- [x] Add deterministic one-shot footstep and impact generators.\n- [x] Validate sample rates, normalized parameters, and stereo buffer shape.\n- [x] Cover deterministic block rendering, finite-effect completion, output bounds, and parameter response with regression tests.\n- [x] Document finite-clip and continuous-stream integration.\n- [ ] Audition generated sounds at representative sample rates and tune their acoustic character.\n- [ ] Expand the generator toolkit and sound families based on reusable requirements.\n\n**Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.\n
+
+
+## Procedural sound generation
+
+- [x] Add a dedicated engine-independent procedural sound module with caller-buffer stereo rendering.
+- [x] Add deterministic wind and rain ambience generators.
+- [x] Add deterministic one-shot footstep and impact generators.
+- [x] Validate sample rates, normalized parameters, and stereo buffer shape.
+- [x] Cover deterministic block rendering, finite-effect completion, output bounds, and parameter response with regression tests.
+- [x] Document finite-clip and continuous-stream integration.
+- [ ] Audition generated sounds at representative sample rates and tune their acoustic character.
+- [ ] Expand the generator toolkit and sound families based on reusable requirements.
+
+**Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
