@@ -296,7 +296,7 @@ impl StreamBuffer {
         Ok((
             StreamWriter {
                 shared: shared.clone(),
-                status: status.clone(),
+                _status: status.clone(),
             },
             Arc::new(AudioStream { shared, status }),
         ))
@@ -309,7 +309,7 @@ impl StreamBuffer {
 /// retry after the audio consumer has advanced it. The writer is intentionally not cloneable.
 pub struct StreamWriter {
     shared: Arc<StreamShared>,
-    status: Arc<StreamStatus>,
+    _status: Arc<StreamStatus>,
 }
 
 impl StreamWriter {
@@ -717,7 +717,7 @@ impl SoundController {
             });
         }
         if stream
-            .shared
+            .status
             .consumer_active
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -1196,8 +1196,11 @@ impl Voice {
 
     fn render(&mut self, output_rate: u32, bus_gain: f32) -> (f32, f32) {
         if let Some(stream) = self.stream.take() {
-            release_stream(stream);
-        } else {
+            let (output, finished) = self.render_stream(&stream, bus_gain);
+            if finished {
+                release_stream(stream);
+                self.clear();
+            } else {
                 self.stream = Some(stream);
             }
             return output;
