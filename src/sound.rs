@@ -261,7 +261,7 @@ impl StreamBuffer {
             playing: AtomicBool::new(false),
             underrun_frames: AtomicU64::new(0),
         });
-        Ok((StreamWriter { shared: shared.clone() }, Arc::new(AudioStream { shared }))
+        Ok((StreamWriter { shared: shared.clone() }, Arc::new(AudioStream { shared })))
     }
 }
 
@@ -329,6 +329,9 @@ impl AudioStream {
     pub fn prebuffer_frames(&self) -> usize { self.shared.config.prebuffer_frames }
     pub fn available_frames(&self) -> usize { self.shared.frames.available() }
     pub fn is_finished(&self) -> bool { self.shared.finished.load(Ordering::Acquire) }
+    /// True from successful command submission until the mixer releases the stream voice.
+    pub fn is_active(&self) -> bool { self.shared.consumer_active.load(Ordering::Acquire) }
+    /// True after the startup prebuffer has been reached and frames are being consumed.
     pub fn is_playing(&self) -> bool { self.shared.playing.load(Ordering::Acquire) }
     pub fn underrun_frames(&self) -> u64 { self.shared.underrun_frames.load(Ordering::Relaxed) }
 }
@@ -467,6 +470,7 @@ impl fmt::Display for SoundCommandError {
             Self::QueueFull => write!(f, "sound command queue is full"),
             Self::ProducerBusy => write!(f, "another thread is submitting a sound command"),
             Self::StreamSampleRateMismatch { stream_sample_rate, mixer_sample_rate } => write!(f, "stream sample rate {stream_sample_rate} does not match mixer rate {mixer_sample_rate}"),
+            Self::StreamAlreadyActive => write!(f, "stream is already queued or playing"),
         }
     }
 }
@@ -613,13 +617,21 @@ impl SoundController {
                 mixer_sample_rate: self.sample_rate(),
             });
         }
-        self.submit(AudioCommand::PlayStream {
+        if stream.shared.consumer_active.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            return Err(SoundCommandError::StreamAlreadyActive);
+        }
+        let shared = stream.shared.clone();
+        let result = self.submit(AudioCommand::PlayStream {
             key,
             stream,
             category,
             gain: sanitize_gain(gain),
             fade_in_frames: duration_frames(fade_in, self.sample_rate()),
-        })
+        });
+        if result.is_err() {
+            shared.consumer_active.store(false, Ordering::Release);
+        }
+        result
     }
 
 
@@ -795,8 +807,8 @@ impl<T, const N: usize> Drop for SpscQueue<T, N> {
 /// Audio-thread-owned, fixed-voice mixer.
 ///
 /// Construct this before entering the host's render callback. The render path processes at most
-/// 64 queued commands per frame, reads immutable PCM, resamples linearly, mixes active voices,
-/// and performs no file access or decoding.
+/// 64 queued commands per frame, reads immutable resident PCM or prebuffered stream frames,
+/// mixes active voices, and performs no file access or decoding.
 pub struct SoundMixer {
     shared: Arc<SoundShared>,
     voices: Vec<Voice>,
@@ -808,6 +820,12 @@ struct ConsumerGuard(Arc<SoundShared>);
 
 impl Drop for ConsumerGuard {
     fn drop(&mut self) {
+        while let Some(command) = self.0.commands.pop() {
+            if let AudioCommand::PlayStream { stream, .. } = command {
+                stream.shared.playing.store(false, Ordering::Release);
+                stream.shared.consumer_active.store(false, Ordering::Release);
+            }
+        }
         self.0.active_voices.store(0, Ordering::Release);
         self.0.consumer_active.store(false, Ordering::Release);
     }
@@ -844,7 +862,7 @@ impl SoundMixer {
         let mut right = 0.0f64;
         let mut active = 0;
         for voice in &mut self.voices {
-            if voice.clip.is_none() {
+            if voice.is_idle() {
                 continue;
             }
             let category_index = voice.category.index();
@@ -856,7 +874,7 @@ impl SoundMixer {
             let (voice_left, voice_right) = voice.render(self.sample_rate, bus_gain);
             left += f64::from(voice_left);
             right += f64::from(voice_right);
-            if voice.clip.is_some() {
+            if voice.is_active() {
                 active += 1;
             }
         }
@@ -894,7 +912,7 @@ impl SoundMixer {
                 category,
                 gain,
             } => {
-                if let Some(voice) = self.voices.iter_mut().find(|voice| voice.clip.is_none()) {
+                if let Some(voice) = self.voices.iter_mut().find(|voice| voice.is_idle()) {
                     voice.start(clip, None, false, category, gain, 0);
                 } else {
                     self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
@@ -908,12 +926,12 @@ impl SoundMixer {
                 fade_in_frames,
             } => {
                 let existing = self.voices.iter_mut().find(|voice| {
-                    voice.clip.is_some() && voice.looping && voice.loop_key == Some(key)
+                    voice.is_active() && voice.looping && voice.loop_key == Some(key)
                 });
                 if let Some(voice) = existing {
                     voice.start(clip, Some(key), true, category, gain, fade_in_frames);
                 } else if let Some(voice) =
-                    self.voices.iter_mut().find(|voice| voice.clip.is_none())
+                    self.voices.iter_mut().find(|voice| voice.is_idle())
                 {
                     voice.start(clip, Some(key), true, category, gain, fade_in_frames);
                 } else {
@@ -921,10 +939,6 @@ impl SoundMixer {
                 }
             }
             AudioCommand::PlayStream { key, stream, category, gain, fade_in_frames } => {
-                if stream.shared.consumer_active.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-                    self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
-                    return;
-                }
                 let existing = key.and_then(|loop_key| self.voices.iter_mut().find(|voice| {
                     voice.is_active() && voice.looping && voice.loop_key == Some(loop_key)
                 }));
@@ -933,6 +947,7 @@ impl SoundMixer {
                 } else if let Some(voice) = self.voices.iter_mut().find(|voice| voice.is_idle()) {
                     voice.start_stream(stream, key, category, gain, fade_in_frames);
                 } else {
+                    stream.shared.playing.store(false, Ordering::Release);
                     stream.shared.consumer_active.store(false, Ordering::Release);
                     self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
                 }
@@ -943,7 +958,7 @@ impl SoundMixer {
                 duration_frames,
             } => {
                 if let Some(voice) = self.voices.iter_mut().find(|voice| {
-                    voice.clip.is_some() && voice.looping && voice.loop_key == Some(key)
+                    voice.is_active() && voice.looping && voice.loop_key == Some(key)
                 }) {
                     voice.fade_to(gain, duration_frames, false);
                 }
@@ -953,7 +968,7 @@ impl SoundMixer {
                 duration_frames,
             } => {
                 if let Some(voice) = self.voices.iter_mut().find(|voice| {
-                    voice.clip.is_some() && voice.looping && voice.loop_key == Some(key)
+                    voice.is_active() && voice.looping && voice.loop_key == Some(key)
                 }) {
                     if duration_frames == 0 {
                         voice.clear();
@@ -1160,7 +1175,7 @@ impl Voice {
     /// Returns true when a completed fade requested voice removal.
     fn advance_fade(&mut self) -> bool {
         if self.fade_total_frames == 0 {
-            return;
+            return false;
         }
         self.fade_elapsed_frames = self.fade_elapsed_frames.saturating_add(1);
         let progress =
@@ -1191,6 +1206,12 @@ impl Voice {
         self.fade_elapsed_frames = 0;
         self.fade_total_frames = 0;
         self.stop_after_fade = false;
+    }
+}
+
+impl Drop for Voice {
+    fn drop(&mut self) {
+        self.clear();
     }
 }
 
