@@ -9,7 +9,8 @@ Verdandi is split into reusable audio systems with a small optional host integra
 | Theme and composition | **Theme**, **ThemeOverrides**, **Composer**, **Layer**, **LoopPlan**, **NoteEvent** | Seed-derived musical frame and four-bar layer patterns |
 | Music rendering | **MusicConfig**, **MusicShared**, **Engine**, **MusicStatus** | Sequencing, synthesis, transport, stingers, and music gain |
 | Sample instruments | **SfzInstrument**, **SfzSampler**, **InstrumentConfig** | Optional decoded WAV sample playback from SFZ mappings |
-| Procedural sound generation | **ProceduralGenerator**, **WindGenerator**, **RainGenerator**, **FootstepGenerator**, **ImpactGenerator** | Deterministic non-musical PCM generation into caller-owned buffers |\n| Sound playback | **AudioClip**, **SoundController**, **SoundMixer** | Resident PCM one-shots, keyed loops, fades, categories, and voice limits |
+| Procedural sound generation | **ProceduralGenerator**, **WindGenerator**, **RainGenerator**, **FootstepGenerator**, **ImpactGenerator** | Deterministic non-musical PCM generation into caller-owned buffers |
+| Sound playback | **AudioClip**, **SoundController**, **SoundMixer** | Resident PCM one-shots, keyed loops, fades, categories, and voice limits |
 | Sound streaming | **StreamBuffer**, **StreamWriter**, **AudioStream** | Bounded decoded-PCM producer/consumer path |
 | Bevy adapter | **ProceduralMusicPlugin**, **AudioController**, **MusicTrack** | Bevy audio source, controller resource, and combined music/sound output |
 
@@ -70,7 +71,8 @@ Most applications should start with:
 
 - **MusicConfig** and either **ProceduralMusicPlugin** or **Engine**.
 - **AudioController** when using Bevy, or **MusicShared** for custom-host music control.
-- **ProceduralGenerator** and its built-in generators for deterministic non-musical sound generation.\n- **AudioClip**, **SoundCategory**, and **SoundController** for resident effects.
+- **ProceduralGenerator** and its built-in generators for deterministic non-musical sound generation.
+- **AudioClip**, **SoundCategory**, and **SoundController** for resident effects.
 - **StreamBuffer** and **StreamWriter** for incremental decoded audio.
 - **SfzInstrument** only when using external SFZ sample libraries.
 
