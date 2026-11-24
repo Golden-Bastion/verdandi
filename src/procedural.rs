@@ -37,7 +37,9 @@ pub trait ProceduralGenerator {
     /// Render complete stereo frames. The output length must be even.
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError>;
     /// Finite sources return true after their sound has ended; continuous sources return false.
-    fn is_finished(&self) -> bool { false }
+    fn is_finished(&self) -> bool {
+        false
+    }
 }
 
 fn validate_rate(rate: u32) -> Result<(), ProceduralError> {
@@ -53,15 +55,23 @@ fn validate_unit(value: f32) -> Result<(), ProceduralError> {
     Ok(())
 }
 fn validate_output(output: &[f32]) -> Result<(), ProceduralError> {
-    if output.len() % 2 != 0 { return Err(ProceduralError::OutputMustContainStereoFrames); }
+    if output.len() % 2 != 0 {
+        return Err(ProceduralError::OutputMustContainStereoFrames);
+    }
     Ok(())
 }
 
 #[derive(Clone, Copy)]
-struct LowPass { state: f32, coefficient: f32 }
+struct LowPass {
+    state: f32,
+    coefficient: f32,
+}
 impl LowPass {
     fn new(sample_rate: f32, cutoff: f32) -> Self {
-        Self { state: 0.0, coefficient: 1.0 - (-TAU * cutoff / sample_rate).exp() }
+        Self {
+            state: 0.0,
+            coefficient: 1.0 - (-TAU * cutoff / sample_rate).exp(),
+        }
     }
     fn tick(&mut self, input: f32) -> f32 {
         self.state += self.coefficient * (input - self.state);
@@ -80,12 +90,22 @@ pub struct WindConfig {
     pub brightness: f32,
 }
 impl Default for WindConfig {
-    fn default() -> Self { Self { sample_rate: 44_100, intensity: 0.55, brightness: 0.35 } }
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.55,
+            brightness: 0.35,
+        }
+    }
 }
 
 /// Deterministic continuous wind source.
 pub struct WindGenerator {
-    sample_rate: f32, intensity: f32, rng: Rng, filter: LowPass, phase: f32,
+    sample_rate: f32,
+    intensity: f32,
+    rng: Rng,
+    filter: LowPass,
+    phase: f32,
 }
 impl WindGenerator {
     /// Construct a wind source with an independent deterministic random stream.
@@ -97,7 +117,10 @@ impl WindGenerator {
             sample_rate: config.sample_rate as f32,
             intensity: config.intensity,
             rng: Rng::new(derive_seed(seed, 0x5749_4E44, 0)),
-            filter: LowPass::new(config.sample_rate as f32, 180.0 + config.brightness * 2_800.0),
+            filter: LowPass::new(
+                config.sample_rate as f32,
+                180.0 + config.brightness * 2_800.0,
+            ),
             phase: (derive_seed(seed, 0x5749_4E44, 1) as f32 / u64::MAX as f32) * TAU,
         })
     }
@@ -131,15 +154,36 @@ pub struct RainConfig {
     pub intensity: f32,
 }
 impl Default for RainConfig {
-    fn default() -> Self { Self { sample_rate: 44_100, density: 0.55, brightness: 0.65, intensity: 0.6 } }
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            density: 0.55,
+            brightness: 0.65,
+            intensity: 0.6,
+        }
+    }
 }
 const DROP_VOICES: usize = 8;
 #[derive(Clone, Copy)]
-struct Drop { age: f32, decay: f32, amplitude: f32, phase: f32, phase_step: f32 }
+struct Drop {
+    age: f32,
+    decay: f32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+}
 impl Drop {
-    const SILENT: Self = Self { age: 1.0, decay: 1.0, amplitude: 0.0, phase: 0.0, phase_step: 0.0 };
+    const SILENT: Self = Self {
+        age: 1.0,
+        decay: 1.0,
+        amplitude: 0.0,
+        phase: 0.0,
+        phase_step: 0.0,
+    };
     fn tick(&mut self, age_step: f32) -> f32 {
-        if self.age >= 1.0 { return 0.0; }
+        if self.age >= 1.0 {
+            return 0.0;
+        }
         let out = self.amplitude * (-self.age * self.decay).exp() * (TAU * self.phase).sin();
         self.phase = (self.phase + self.phase_step).rem_euclid(1.0);
         self.age += age_step;
@@ -149,8 +193,14 @@ impl Drop {
 
 /// Deterministic continuous rain source with a fixed-size drop voice pool.
 pub struct RainGenerator {
-    sample_rate: f32, density: f32, brightness: f32, intensity: f32,
-    rng: Rng, high_pass_state: f32, drops: [Drop; DROP_VOICES], next_drop: usize,
+    sample_rate: f32,
+    density: f32,
+    brightness: f32,
+    intensity: f32,
+    rng: Rng,
+    high_pass_state: f32,
+    drops: [Drop; DROP_VOICES],
+    next_drop: usize,
 }
 impl RainGenerator {
     /// Construct a rain source with an independent deterministic random stream.
@@ -160,10 +210,14 @@ impl RainGenerator {
         validate_unit(config.brightness)?;
         validate_unit(config.intensity)?;
         Ok(Self {
-            sample_rate: config.sample_rate as f32, density: config.density,
-            brightness: config.brightness, intensity: config.intensity,
-            rng: Rng::new(derive_seed(seed, 0x5241_494E, 0)), high_pass_state: 0.0,
-            drops: [Drop::SILENT; DROP_VOICES], next_drop: 0,
+            sample_rate: config.sample_rate as f32,
+            density: config.density,
+            brightness: config.brightness,
+            intensity: config.intensity,
+            rng: Rng::new(derive_seed(seed, 0x5241_494E, 0)),
+            high_pass_state: 0.0,
+            drops: [Drop::SILENT; DROP_VOICES],
+            next_drop: 0,
         })
     }
 }
@@ -180,7 +234,8 @@ impl ProceduralGenerator for RainGenerator {
                 let drop = &mut self.drops[self.next_drop];
                 drop.age = 0.0;
                 drop.decay = 2.5 + self.rng.next_f32() * 4.5;
-                drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
+                drop.amplitude =
+                    (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
                 drop.phase = 0.0;
                 drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
@@ -206,13 +261,24 @@ pub struct FootstepConfig {
     pub brightness: f32,
 }
 impl Default for FootstepConfig {
-    fn default() -> Self { Self { sample_rate: 44_100, intensity: 0.75, brightness: 0.45 } }
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.75,
+            brightness: 0.45,
+        }
+    }
 }
 
 /// Finite deterministic generator for one footstep.
 pub struct FootstepGenerator {
-    sample_rate: f32, intensity: f32, brightness: f32, position: u32, total: u32,
-    rng: Rng, low_pass: f32,
+    sample_rate: f32,
+    intensity: f32,
+    brightness: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    low_pass: f32,
 }
 impl FootstepGenerator {
     /// Construct one deterministic footstep.
@@ -221,9 +287,13 @@ impl FootstepGenerator {
         validate_unit(config.intensity)?;
         validate_unit(config.brightness)?;
         Ok(Self {
-            sample_rate: config.sample_rate as f32, intensity: config.intensity,
-            brightness: config.brightness, position: 0, total: (config.sample_rate as f32 * 0.22) as u32,
-            rng: Rng::new(derive_seed(seed, 0x5354_4550, 0)), low_pass: 0.0,
+            sample_rate: config.sample_rate as f32,
+            intensity: config.intensity,
+            brightness: config.brightness,
+            position: 0,
+            total: (config.sample_rate as f32 * 0.22) as u32,
+            rng: Rng::new(derive_seed(seed, 0x5354_4550, 0)),
+            low_pass: 0.0,
         })
     }
 }
@@ -231,20 +301,26 @@ impl ProceduralGenerator for FootstepGenerator {
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
         validate_output(output)?;
         for frame in output.chunks_exact_mut(2) {
-            if self.position >= self.total { frame.fill(0.0); continue; }
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
             let t = self.position as f32 / self.sample_rate;
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             self.low_pass += (0.06 + self.brightness * 0.72) * (noise - self.low_pass);
             let body = (TAU * (62.0 - 18.0 * (t * 12.0).min(1.0)) * t).sin() * (-t * 23.0).exp();
             let sample = (body * 0.62 + self.low_pass * (-t * 42.0).exp() * 0.38)
-                * self.intensity * (1.0 - t / 0.22).max(0.0);
+                * self.intensity
+                * (1.0 - t / 0.22).max(0.0);
             frame[0] = sample.clamp(-1.0, 1.0);
             frame[1] = frame[0];
             self.position += 1;
         }
         Ok(())
     }
-    fn is_finished(&self) -> bool { self.position >= self.total }
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
 }
 
 /// Configuration for a one-shot impact.
@@ -258,13 +334,25 @@ pub struct ImpactConfig {
     pub resonance: f32,
 }
 impl Default for ImpactConfig {
-    fn default() -> Self { Self { sample_rate: 44_100, intensity: 0.8, resonance: 0.55 } }
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.8,
+            resonance: 0.55,
+        }
+    }
 }
 
 /// Finite deterministic generator for one impact.
 pub struct ImpactGenerator {
-    sample_rate: f32, intensity: f32, resonance: f32, position: u32, total: u32,
-    rng: Rng, low_pass: f32, phase: f32,
+    sample_rate: f32,
+    intensity: f32,
+    resonance: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    low_pass: f32,
+    phase: f32,
 }
 impl ImpactGenerator {
     /// Construct one deterministic impact.
@@ -273,9 +361,14 @@ impl ImpactGenerator {
         validate_unit(config.intensity)?;
         validate_unit(config.resonance)?;
         Ok(Self {
-            sample_rate: config.sample_rate as f32, intensity: config.intensity,
-            resonance: config.resonance, position: 0, total: (config.sample_rate as f32 * 0.38) as u32,
-            rng: Rng::new(derive_seed(seed, 0x494D_5041, 0)), low_pass: 0.0, phase: 0.0,
+            sample_rate: config.sample_rate as f32,
+            intensity: config.intensity,
+            resonance: config.resonance,
+            position: 0,
+            total: (config.sample_rate as f32 * 0.38) as u32,
+            rng: Rng::new(derive_seed(seed, 0x494D_5041, 0)),
+            low_pass: 0.0,
+            phase: 0.0,
         })
     }
 }
@@ -283,21 +376,29 @@ impl ProceduralGenerator for ImpactGenerator {
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
         validate_output(output)?;
         for frame in output.chunks_exact_mut(2) {
-            if self.position >= self.total { frame.fill(0.0); continue; }
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
             let t = self.position as f32 / self.sample_rate;
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             self.low_pass += 0.16 * (noise - self.low_pass);
-            self.phase = (self.phase + (48.0 + self.resonance * 115.0) / self.sample_rate).rem_euclid(1.0);
-            let body = (self.phase * TAU).sin() * (-t * (8.0 + (1.0 - self.resonance) * 20.0)).exp();
+            self.phase =
+                (self.phase + (48.0 + self.resonance * 115.0) / self.sample_rate).rem_euclid(1.0);
+            let body =
+                (self.phase * TAU).sin() * (-t * (8.0 + (1.0 - self.resonance) * 20.0)).exp();
             let transient = self.low_pass * (-t * 65.0).exp();
-            let sample = (body * self.resonance + transient * (1.0 - self.resonance)) * self.intensity;
+            let sample =
+                (body * self.resonance + transient * (1.0 - self.resonance)) * self.intensity;
             frame[0] = sample.clamp(-1.0, 1.0);
             frame[1] = frame[0];
             self.position += 1;
         }
         Ok(())
     }
-    fn is_finished(&self) -> bool { self.position >= self.total }
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
 }
 
 #[cfg(test)]
@@ -340,7 +441,8 @@ mod tests {
         let mut impact = ImpactGenerator::new(ImpactConfig::default(), 8).unwrap();
         let a = render(&mut step, 12000);
         let b = render(&mut impact, 20000);
-        bounded(&a); bounded(&b);
+        bounded(&a);
+        bounded(&b);
         assert!(step.is_finished() && impact.is_finished());
         assert!(a[19_404..].iter().all(|s| *s == 0.0));
         assert!(b[33_516..].iter().all(|s| *s == 0.0));
@@ -350,10 +452,31 @@ mod tests {
 
     #[test]
     fn rejects_invalid_configuration_and_odd_output() {
-        assert!(matches!(WindGenerator::new(WindConfig { sample_rate: 1000, ..WindConfig::default() }, 0), Err(ProceduralError::InvalidSampleRate)));
-        assert!(matches!(RainGenerator::new(RainConfig { density: f32::NAN, ..RainConfig::default() }, 0), Err(ProceduralError::InvalidParameter)));
+        assert!(matches!(
+            WindGenerator::new(
+                WindConfig {
+                    sample_rate: 1000,
+                    ..WindConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            RainGenerator::new(
+                RainConfig {
+                    density: f32::NAN,
+                    ..RainConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
         let mut wind = WindGenerator::new(WindConfig::default(), 0).unwrap();
-        assert_eq!(wind.render(&mut [0.0; 3]), Err(ProceduralError::OutputMustContainStereoFrames));
+        assert_eq!(
+            wind.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
     }
 
     #[test]
@@ -365,8 +488,22 @@ mod tests {
         let _ = render(&mut other, 1024);
         let mut repeated = WindGenerator::new(config, 1).unwrap();
         assert_eq!(expected, render(&mut repeated, 512));
-        let mut quiet = WindGenerator::new(WindConfig { intensity: 0.2, ..config }, 12).unwrap();
-        let mut loud = WindGenerator::new(WindConfig { intensity: 0.9, ..config }, 12).unwrap();
+        let mut quiet = WindGenerator::new(
+            WindConfig {
+                intensity: 0.2,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        let mut loud = WindGenerator::new(
+            WindConfig {
+                intensity: 0.9,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
         assert_ne!(render(&mut quiet, 2048), render(&mut loud, 2048));
     }
 }
