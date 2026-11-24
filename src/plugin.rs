@@ -265,6 +265,28 @@ impl AudioController {
         self.sounds.stop_loop(key, fade_out)
     }
 
+    /// Play a host-fed decoded stream as a one-shot sound.
+    pub fn play_stream(
+        &self,
+        stream: Arc<crate::sound::AudioStream>,
+        category: SoundCategory,
+        gain: f32,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.play_stream(stream, category, gain)
+    }
+
+    /// Start a keyed host-fed stream; use stop_loop to fade and stop it.
+    pub fn play_stream_loop(
+        &self,
+        key: crate::sound::LoopKey,
+        stream: Arc<crate::sound::AudioStream>,
+        category: SoundCategory,
+        gain: f32,
+        fade_in: Duration,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.play_stream_loop(key, stream, category, gain, fade_in)
+    }
+
     /// Set an independent music, effects, or ambience bus gain immediately.
     pub fn set_bus_volume(&self, bus: AudioBus, gain: f32) {
         match bus {

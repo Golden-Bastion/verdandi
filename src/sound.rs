@@ -155,6 +155,244 @@ impl fmt::Display for AudioClipError {
 
 impl Error for AudioClipError {}
 
+
+/// Maximum number of decoded frames permitted in one stream's prebuffer.
+pub const MAX_STREAM_BUFFER_FRAMES: usize = 262_144;
+
+/// Configuration for a bounded decoded-PCM stream buffer.
+///
+/// The producer must write frames at the mixer output sample rate. Decode and any required
+/// resampling on the host's worker thread before calling StreamWriter::write_interleaved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamBufferConfig {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub capacity_frames: usize,
+    pub prebuffer_frames: usize,
+}
+
+impl StreamBufferConfig {
+    pub const fn new(
+        sample_rate: u32,
+        channels: u16,
+        capacity_frames: usize,
+        prebuffer_frames: usize,
+    ) -> Self {
+        Self { sample_rate, channels, capacity_frames, prebuffer_frames }
+    }
+}
+
+impl Default for StreamBufferConfig {
+    fn default() -> Self {
+        Self { sample_rate: 44_100, channels: 2, capacity_frames: 88_200, prebuffer_frames: 4_410 }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamBufferConfigError {
+    InvalidSampleRate,
+    UnsupportedChannelCount(u16),
+    InvalidCapacity { requested: usize, maximum: usize },
+    InvalidPrebuffer { requested: usize, capacity: usize },
+}
+
+impl fmt::Display for StreamBufferConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidSampleRate => write!(f, "stream sample rate must be greater than zero"),
+            Self::UnsupportedChannelCount(channels) => write!(f, "stream channels must be mono or stereo, got {channels}"),
+            Self::InvalidCapacity { requested, maximum } => write!(f, "stream capacity must be in 1..={maximum} frames, got {requested}"),
+            Self::InvalidPrebuffer { requested, capacity } => write!(f, "prebuffer must not exceed capacity ({requested} > {capacity})"),
+        }
+    }
+}
+
+impl Error for StreamBufferConfigError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamWriteError {
+    Finished,
+    IncompleteFrame { sample_count: usize, channels: u16 },
+    NonFiniteSample { index: usize },
+}
+
+impl fmt::Display for StreamWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Finished => write!(f, "stream has already been finished"),
+            Self::IncompleteFrame { sample_count, channels } => write!(f, "{sample_count} samples do not form complete {channels}-channel frames"),
+            Self::NonFiniteSample { index } => write!(f, "sample {index} is not finite"),
+        }
+    }
+}
+
+impl Error for StreamWriteError {}
+
+/// Creates a bounded stream shared by one decoder worker and one audio consumer.
+pub struct StreamBuffer;
+
+impl StreamBuffer {
+    /// Allocate the ring before playback and return its single producer and shared stream handle.
+    pub fn new(config: StreamBufferConfig) -> Result<(StreamWriter, Arc<AudioStream>), StreamBufferConfigError> {
+        if config.sample_rate == 0 {
+            return Err(StreamBufferConfigError::InvalidSampleRate);
+        }
+        if !matches!(config.channels, 1 | 2) {
+            return Err(StreamBufferConfigError::UnsupportedChannelCount(config.channels));
+        }
+        if config.capacity_frames == 0 || config.capacity_frames > MAX_STREAM_BUFFER_FRAMES {
+            return Err(StreamBufferConfigError::InvalidCapacity {
+                requested: config.capacity_frames,
+                maximum: MAX_STREAM_BUFFER_FRAMES,
+            });
+        }
+        if config.prebuffer_frames > config.capacity_frames {
+            return Err(StreamBufferConfigError::InvalidPrebuffer {
+                requested: config.prebuffer_frames,
+                capacity: config.capacity_frames,
+            });
+        }
+
+        let shared = Arc::new(StreamShared {
+            config,
+            frames: SpscFrameRing::new(config.capacity_frames),
+            finished: AtomicBool::new(false),
+            consumer_active: AtomicBool::new(false),
+            playing: AtomicBool::new(false),
+            underrun_frames: AtomicU64::new(0),
+        });
+        Ok((StreamWriter { shared: shared.clone() }, Arc::new(AudioStream { shared }))
+    }
+}
+
+/// Host-side handle used to feed decoded frames from a worker thread.
+///
+/// Writes are non-blocking and may be partial. A return value of zero means the ring is full;
+/// retry after the audio consumer has advanced it. The writer is intentionally not cloneable.
+pub struct StreamWriter {
+    shared: Arc<StreamShared>,
+}
+
+impl StreamWriter {
+    /// Write interleaved mono or stereo frames. Returns the number of frames accepted.
+    pub fn write_interleaved(&mut self, samples: &[f32]) -> Result<usize, StreamWriteError> {
+        if self.shared.finished.load(Ordering::Acquire) {
+            return Err(StreamWriteError::Finished);
+        }
+        let channels = usize::from(self.shared.config.channels);
+        if samples.len() % channels != 0 {
+            return Err(StreamWriteError::IncompleteFrame {
+                sample_count: samples.len(),
+                channels: self.shared.config.channels,
+            });
+        }
+        if let Some(index) = samples.iter().position(|sample| !sample.is_finite()) {
+            return Err(StreamWriteError::NonFiniteSample { index });
+        }
+
+        let mut accepted = 0;
+        for frame in samples.chunks_exact(channels) {
+            let frame = if channels == 1 { [frame[0], 0.0] } else { [frame[0], frame[1]] };
+            if !self.shared.frames.push(frame) {
+                break;
+            }
+            accepted += 1;
+        }
+        Ok(accepted)
+    }
+
+    /// Mark the producer side complete. The mixer drains queued frames before ending playback.
+    pub fn finish(&mut self) {
+        self.shared.finished.store(true, Ordering::Release);
+    }
+
+    pub fn available_frames(&self) -> usize {
+        self.shared.frames.available()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.shared.finished.load(Ordering::Acquire)
+    }
+}
+
+/// Shared handle submitted to the mixer. Keep this handle and its StreamWriter alive until
+/// is_playing() becomes false; that keeps ring-buffer storage from being deallocated by the
+/// render callback when a stream finishes or is stopped.
+pub struct AudioStream {
+    shared: Arc<StreamShared>,
+}
+
+impl AudioStream {
+    pub fn sample_rate(&self) -> u32 { self.shared.config.sample_rate }
+    pub fn channels(&self) -> u16 { self.shared.config.channels }
+    pub fn capacity_frames(&self) -> usize { self.shared.config.capacity_frames }
+    pub fn prebuffer_frames(&self) -> usize { self.shared.config.prebuffer_frames }
+    pub fn available_frames(&self) -> usize { self.shared.frames.available() }
+    pub fn is_finished(&self) -> bool { self.shared.finished.load(Ordering::Acquire) }
+    pub fn is_playing(&self) -> bool { self.shared.playing.load(Ordering::Acquire) }
+    pub fn underrun_frames(&self) -> u64 { self.shared.underrun_frames.load(Ordering::Relaxed) }
+}
+
+struct StreamShared {
+    config: StreamBufferConfig,
+    frames: SpscFrameRing,
+    finished: AtomicBool,
+    consumer_active: AtomicBool,
+    playing: AtomicBool,
+    underrun_frames: AtomicU64,
+}
+
+/// Fixed-capacity SPSC ring of decoded stereo frame slots. Mono input uses the left slot.
+struct SpscFrameRing {
+    slots: Vec<UnsafeCell<MaybeUninit<[f32; 2]>>>,
+    write: AtomicUsize,
+    read: AtomicUsize,
+    capacity: usize,
+}
+
+// SAFETY: the writer owns the write index and the mixer owns the read index. Release/acquire
+// publication transfers each initialized frame without concurrent access to a slot.
+unsafe impl Send for SpscFrameRing {}
+// SAFETY: StreamBuffer creates one non-cloneable writer and the mixer enforces one consumer.
+unsafe impl Sync for SpscFrameRing {}
+
+impl SpscFrameRing {
+    fn new(capacity: usize) -> Self {
+        Self {
+            slots: (0..capacity).map(|_| UnsafeCell::new(MaybeUninit::uninit())).collect(),
+            write: AtomicUsize::new(0),
+            read: AtomicUsize::new(0),
+            capacity,
+        }
+    }
+
+    fn available(&self) -> usize {
+        let write = self.write.load(Ordering::Acquire);
+        let read = self.read.load(Ordering::Relaxed);
+        write.wrapping_sub(read).min(self.capacity)
+    }
+
+    fn push(&self, frame: [f32; 2]) -> bool {
+        let write = self.write.load(Ordering::Relaxed);
+        let read = self.read.load(Ordering::Acquire);
+        if write.wrapping_sub(read) >= self.capacity { return false; }
+        // SAFETY: the producer owns this slot until publishing the next write index.
+        unsafe { (*self.slots[write % self.capacity].get()).write(frame); }
+        self.write.store(write.wrapping_add(1), Ordering::Release);
+        true
+    }
+
+    fn pop(&self) -> Option<[f32; 2]> {
+        let read = self.read.load(Ordering::Relaxed);
+        let write = self.write.load(Ordering::Acquire);
+        if read == write { return None; }
+        // SAFETY: acquire observes the initialized slot; only the consumer advances read.
+        let frame = unsafe { (*self.slots[read % self.capacity].get()).assume_init_read() };
+        self.read.store(read.wrapping_add(1), Ordering::Release);
+        Some(frame)
+    }
+}
+
 /// Configuration for a bounded, engine-independent sound mixer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SoundMixerConfig {
@@ -228,6 +466,7 @@ impl fmt::Display for SoundCommandError {
         match self {
             Self::QueueFull => write!(f, "sound command queue is full"),
             Self::ProducerBusy => write!(f, "another thread is submitting a sound command"),
+            Self::StreamSampleRateMismatch { stream_sample_rate, mixer_sample_rate } => write!(f, "stream sample rate {stream_sample_rate} does not match mixer rate {mixer_sample_rate}"),
         }
     }
 }
@@ -356,6 +595,34 @@ impl SoundController {
         })
     }
 
+    /// Queue a decoded stream as a one-shot. The stream must use this mixer's sample rate.
+    pub fn play_stream(&self, stream: Arc<AudioStream>, category: SoundCategory, gain: f32) -> Result<(), SoundCommandError> {
+        self.play_stream_inner(None, stream, category, gain, Duration::ZERO)
+    }
+
+    /// Start or replace a keyed streaming source. The host worker may continuously feed a
+    /// looping source; stop_loop applies the normal fade semantics to this keyed voice.
+    pub fn play_stream_loop(&self, key: LoopKey, stream: Arc<AudioStream>, category: SoundCategory, gain: f32, fade_in: Duration) -> Result<(), SoundCommandError> {
+        self.play_stream_inner(Some(key), stream, category, gain, fade_in)
+    }
+
+    fn play_stream_inner(&self, key: Option<LoopKey>, stream: Arc<AudioStream>, category: SoundCategory, gain: f32, fade_in: Duration) -> Result<(), SoundCommandError> {
+        if stream.sample_rate() != self.sample_rate() {
+            return Err(SoundCommandError::StreamSampleRateMismatch {
+                stream_sample_rate: stream.sample_rate(),
+                mixer_sample_rate: self.sample_rate(),
+            });
+        }
+        self.submit(AudioCommand::PlayStream {
+            key,
+            stream,
+            category,
+            gain: sanitize_gain(gain),
+            fade_in_frames: duration_frames(fade_in, self.sample_rate()),
+        })
+    }
+
+
     pub fn set_category_volume(&self, category: SoundCategory, gain: f32) {
         self.shared.category_gain[category.index()]
             .store(sanitize_gain(gain).to_bits(), Ordering::Release);
@@ -453,6 +720,13 @@ enum AudioCommand {
     StopLoop {
         key: LoopKey,
         duration_frames: u64,
+    },
+    PlayStream {
+        key: Option<LoopKey>,
+        stream: Arc<AudioStream>,
+        category: SoundCategory,
+        gain: f32,
+        fade_in_frames: u64,
     },
 }
 
@@ -646,6 +920,23 @@ impl SoundMixer {
                     self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            AudioCommand::PlayStream { key, stream, category, gain, fade_in_frames } => {
+                if stream.shared.consumer_active.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+                    self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+                let existing = key.and_then(|loop_key| self.voices.iter_mut().find(|voice| {
+                    voice.is_active() && voice.looping && voice.loop_key == Some(loop_key)
+                }));
+                if let Some(voice) = existing {
+                    voice.start_stream(stream, key, category, gain, fade_in_frames);
+                } else if let Some(voice) = self.voices.iter_mut().find(|voice| voice.is_idle()) {
+                    voice.start_stream(stream, key, category, gain, fade_in_frames);
+                } else {
+                    stream.shared.consumer_active.store(false, Ordering::Release);
+                    self.shared.rejected_voices.fetch_add(1, Ordering::Relaxed);
+                }
+            }
             AudioCommand::FadeLoop {
                 key,
                 gain,
@@ -678,6 +969,8 @@ impl SoundMixer {
 #[derive(Default)]
 struct Voice {
     clip: Option<Arc<AudioClip>>,
+    stream: Option<Arc<AudioStream>>,
+    stream_started: bool,
     category: SoundCategory,
     loop_key: Option<LoopKey>,
     looping: bool,
@@ -691,6 +984,14 @@ struct Voice {
 }
 
 impl Voice {
+    fn is_active(&self) -> bool {
+        self.clip.is_some() || self.stream.is_some()
+    }
+
+    fn is_idle(&self) -> bool {
+        !self.is_active()
+    }
+
     fn start(
         &mut self,
         clip: Arc<AudioClip>,
@@ -700,10 +1001,45 @@ impl Voice {
         gain: f32,
         fade_in_frames: u64,
     ) {
+        if let Some(previous) = self.stream.take() {
+            previous.shared.playing.store(false, Ordering::Release);
+            previous.shared.consumer_active.store(false, Ordering::Release);
+        }
         self.clip = Some(clip);
+        self.stream_started = false;
         self.category = category;
         self.loop_key = loop_key;
         self.looping = looping;
+        self.position = 0.0;
+        self.gain = if fade_in_frames == 0 { gain } else { 0.0 };
+        self.fade_start_gain = self.gain;
+        self.fade_target_gain = self.gain;
+        self.fade_elapsed_frames = 0;
+        self.fade_total_frames = 0;
+        self.stop_after_fade = false;
+        if fade_in_frames > 0 {
+            self.fade_to(gain, fade_in_frames, false);
+        }
+    }
+
+    fn start_stream(
+        &mut self,
+        stream: Arc<AudioStream>,
+        loop_key: Option<LoopKey>,
+        category: SoundCategory,
+        gain: f32,
+        fade_in_frames: u64,
+    ) {
+        if let Some(previous) = self.stream.take() {
+            previous.shared.playing.store(false, Ordering::Release);
+            previous.shared.consumer_active.store(false, Ordering::Release);
+        }
+        self.clip = None;
+        self.stream = Some(stream);
+        self.stream_started = false;
+        self.category = category;
+        self.loop_key = loop_key;
+        self.looping = loop_key.is_some();
         self.position = 0.0;
         self.gain = if fade_in_frames == 0 { gain } else { 0.0 };
         self.fade_start_gain = self.gain;
@@ -731,6 +1067,18 @@ impl Voice {
     }
 
     fn render(&mut self, output_rate: u32, bus_gain: f32) -> (f32, f32) {
+        if let Some(stream) = self.stream.take() {
+            let (output, finished) = self.render_stream(&stream, bus_gain);
+            if finished {
+                stream.shared.playing.store(false, Ordering::Release);
+                stream.shared.consumer_active.store(false, Ordering::Release);
+                self.clear();
+            } else {
+                self.stream = Some(stream);
+            }
+            return output;
+        }
+
         let Some(clip) = self.clip.as_ref() else {
             return (0.0, 0.0);
         };
@@ -770,14 +1118,47 @@ impl Voice {
 
         let output = (left * self.gain * bus_gain, right * self.gain * bus_gain);
         self.position += f64::from(clip.sample_rate) / f64::from(output_rate);
-        self.advance_fade();
+        if self.advance_fade() {
+            self.clear();
+        }
         if !self.looping && self.position >= frame_count as f64 {
             self.clear();
         }
         output
     }
 
-    fn advance_fade(&mut self) {
+    fn render_stream(&mut self, stream: &AudioStream, bus_gain: f32) -> ((f32, f32), bool) {
+        let available = stream.shared.frames.available();
+        let finished = stream.shared.finished.load(Ordering::Acquire);
+        if !self.stream_started {
+            if available < stream.shared.config.prebuffer_frames && !finished {
+                return ((0.0, 0.0), false);
+            }
+            if available == 0 && finished {
+                return ((0.0, 0.0), true);
+            }
+            self.stream_started = true;
+            stream.shared.playing.store(true, Ordering::Release);
+        }
+
+        let Some(frame) = stream.shared.frames.pop() else {
+            if finished {
+                return ((0.0, 0.0), true);
+            }
+            stream.shared.underrun_frames.fetch_add(1, Ordering::Relaxed);
+            return ((0.0, 0.0), false);
+        };
+        let left = frame[0];
+        let right = if stream.shared.config.channels == 1 { left } else { frame[1] };
+        let output = (left * self.gain * bus_gain, right * self.gain * bus_gain);
+        let stop_after_fade = self.advance_fade();
+        let drained = stream.shared.finished.load(Ordering::Acquire)
+            && stream.shared.frames.available() == 0;
+        (output, stop_after_fade || drained)
+    }
+
+    /// Returns true when a completed fade requested voice removal.
+    fn advance_fade(&mut self) -> bool {
         if self.fade_total_frames == 0 {
             return;
         }
@@ -789,14 +1170,18 @@ impl Voice {
         if self.fade_elapsed_frames >= self.fade_total_frames {
             self.gain = self.fade_target_gain;
             self.fade_total_frames = 0;
-            if self.stop_after_fade {
-                self.clear();
-            }
+            return self.stop_after_fade;
         }
+        false
     }
 
     fn clear(&mut self) {
         self.clip = None;
+        if let Some(stream) = self.stream.take() {
+            stream.shared.playing.store(false, Ordering::Release);
+            stream.shared.consumer_active.store(false, Ordering::Release);
+        }
+        self.stream_started = false;
         self.loop_key = None;
         self.looping = false;
         self.position = 0.0;
@@ -1058,6 +1443,95 @@ mod tests {
         }
 
         assert_eq!(render_sequence(), render_sequence());
+    }
+
+    #[test]
+    fn stream_waits_for_prebuffer_then_drains_after_finish() {
+        let (controller, mut mixer) = system(4, 2);
+        let (mut writer, stream) =
+            StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        assert_eq!(writer.write_interleaved(&[0.1, 0.2]), Ok(2));
+        controller.play_stream(stream.clone(), SoundCategory::Ambience, 1.0).unwrap();
+        assert_eq!(mixer.render_frame(), (0.0, 0.0));
+        assert!(!stream.is_playing());
+        assert_eq!(writer.write_interleaved(&[0.3]), Ok(1));
+        assert_eq!(mixer.render_frame(), (0.1, 0.1));
+        assert!(stream.is_playing());
+        assert_eq!(mixer.render_frame(), (0.2, 0.2));
+        assert_eq!(mixer.render_frame(), (0.3, 0.3));
+        writer.finish();
+        assert_eq!(mixer.render_frame(), (0.0, 0.0));
+        assert!(!stream.is_playing());
+        assert_eq!(controller.status().active_voices, 0);
+    }
+
+    #[test]
+    fn stream_underflow_outputs_silence_and_resumes_when_fed() {
+        let (controller, mut mixer) = system(4, 1);
+        let (mut writer, stream) =
+            StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 1)).unwrap();
+        writer.write_interleaved(&[0.5]).unwrap();
+        controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0).unwrap();
+        assert_eq!(mixer.render_frame(), (0.5, 0.5));
+        assert_eq!(mixer.render_frame(), (0.0, 0.0));
+        assert_eq!(stream.underrun_frames(), 1);
+        assert_eq!(writer.write_interleaved(&[0.75]), Ok(1));
+        assert_eq!(mixer.render_frame(), (0.75, 0.75));
+        writer.finish();
+        assert_eq!(mixer.render_frame(), (0.0, 0.0));
+    }
+
+    #[test]
+    fn stream_writer_is_bounded_and_reports_partial_writes() {
+        let (mut writer, stream) =
+            StreamBuffer::new(StreamBufferConfig::new(4, 2, 2, 1)).unwrap();
+        assert_eq!(writer.write_interleaved(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]), Ok(2));
+        assert_eq!(writer.available_frames(), 2);
+        assert_eq!(writer.write_interleaved(&[0.7, 0.8]), Ok(0));
+        assert_eq!(stream.available_frames(), 2);
+        assert_eq!(writer.write_interleaved(&[0.1]), Err(StreamWriteError::IncompleteFrame { sample_count: 1, channels: 2 }));
+        assert_eq!(writer.write_interleaved(&[f32::NAN, 0.0]), Err(StreamWriteError::NonFiniteSample { index: 0 }));
+    }
+
+    #[test]
+    fn stream_requires_mixer_sample_rate_and_finishes_short_prebuffer() {
+        let (controller, mut mixer) = system(8, 1);
+        let (mut writer, stream) =
+            StreamBuffer::new(StreamBufferConfig::new(4, 1, 4, 3)).unwrap();
+        assert_eq!(controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0),
+            Err(SoundCommandError::StreamSampleRateMismatch { stream_sample_rate: 4, mixer_sample_rate: 8 }));
+        writer.write_interleaved(&[0.4]).unwrap();
+        writer.finish();
+        controller.play_stream(stream.clone(), SoundCategory::Effects, 1.0).unwrap();
+        assert_eq!(mixer.render_frame(), (0.4, 0.4));
+        assert_eq!(mixer.render_frame(), (0.0, 0.0));
+        assert!(!stream.is_playing());
+    }
+
+    #[test]
+    fn keyed_stream_loop_supports_fade_and_stop() {
+        let (controller, mut mixer) = system(4, 1);
+        let (mut writer, stream) =
+            StreamBuffer::new(StreamBufferConfig::new(4, 1, 8, 1)).unwrap();
+        writer.write_interleaved(&[1.0; 8]).unwrap();
+        controller.play_stream_loop(LoopKey(88), stream.clone(), SoundCategory::Ambience, 1.0, Duration::ZERO).unwrap();
+        assert_eq!(mixer.render_frame(), (1.0, 1.0));
+        controller.stop_loop(LoopKey(88), Duration::from_millis(500)).unwrap();
+        assert_eq!(mixer.render_frame(), (1.0, 1.0));
+        assert_eq!(mixer.render_frame(), (0.5, 0.5));
+        assert_eq!(mixer.render_frame(), (0.0, 0.0));
+        assert!(!stream.is_playing());
+    }
+
+    #[test]
+    fn stream_config_and_finished_writer_are_validated() {
+        assert!(matches!(StreamBuffer::new(StreamBufferConfig::new(0, 1, 4, 1)), Err(StreamBufferConfigError::InvalidSampleRate)));
+        assert!(matches!(StreamBuffer::new(StreamBufferConfig::new(4, 3, 4, 1)), Err(StreamBufferConfigError::UnsupportedChannelCount(3))));
+        assert!(matches!(StreamBuffer::new(StreamBufferConfig::new(4, 1, MAX_STREAM_BUFFER_FRAMES + 1, 1)), Err(StreamBufferConfigError::InvalidCapacity { .. })));
+        assert!(matches!(StreamBuffer::new(StreamBufferConfig::new(4, 1, 2, 3)), Err(StreamBufferConfigError::InvalidPrebuffer { .. })));
+        let (mut writer, _) = StreamBuffer::new(StreamBufferConfig::new(4, 1, 2, 1)).unwrap();
+        writer.finish();
+        assert_eq!(writer.write_interleaved(&[0.1]), Err(StreamWriteError::Finished));
     }
 
     #[test]

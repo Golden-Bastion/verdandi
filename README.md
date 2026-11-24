@@ -176,7 +176,11 @@ fn play_world_audio(
 
 Keep the host's `Arc<AudioClip>` references in its asset catalogue while sounds can play. This keeps sample storage owned by the host and prevents its final release from occurring in the render callback. Reusing a `LoopKey` replaces that loop from its beginning; fades are linear and a newer fade starts from the currently reached gain. Stopping removes the voice after its fade completes. If the voice limit is reached, the newest play request is rejected and existing voices continue; the controller exposes the active and rejected counts.
 
-Only one active SoundMixer may consume a SoundController's queue; a second creation is rejected by try_create_mixer. The command queue holds 64 requests. Submission never blocks: a full queue returns `QueueFull`, and simultaneous producer contention returns `ProducerBusy` so the caller can retry. The mixer linearly resamples clips to its output rate. This initial path uses pre-decoded PCM only; streamed playback requires a separate bounded prebuffer contract and is not yet provided.
+Only one active SoundMixer may consume a SoundController's queue; a second creation is rejected by try_create_mixer. The command queue holds 64 requests. Submission never blocks: a full queue returns `QueueFull`, and simultaneous producer contention returns `ProducerBusy` so the caller can retry. The mixer linearly resamples resident clips to its output rate.
+
+Long assets can use the bounded streaming path. Create a `StreamBuffer` before playback with an explicit capacity and startup prebuffer threshold. Keep its `StreamWriter` on a host worker that performs file access, decoding, and any required resampling; write interleaved mono/stereo PCM at the mixer's output sample rate. Writes are non-blocking and may be partial (including zero frames when full). The worker retries after the consumer advances the ring and calls `finish()` at end-of-stream. Playback waits for the prebuffer threshold, outputs silence on later underflow without blocking, resumes when data arrives, and drains queued frames before ending. A keyed stream can be fed continuously by a looping host decoder and faded/stopped with the existing loop controls.
+
+Each stream has one producer and one active consumer. Keep both the stream handle and writer alive until `AudioStream::is_playing()` becomes false; this prevents the ring allocation from being freed on the render callback. Stream buffers are capped at `MAX_STREAM_BUFFER_FRAMES` (262,144 frames) per stream. The default configuration is 2 seconds of stereo capacity with a 100 ms startup prebuffer at 44.1 kHz.
 
 For hosts without Bevy, create a `SoundController`, call `create_mixer()` before starting the audio callback, and mix `SoundMixer::render_frame()` with the music engine's frame output.
 
@@ -190,7 +194,7 @@ For hosts without Bevy, create a `SoundController`, call `create_mixer()` before
 | `composer.rs` | Preset-specific layer generators, motif-based melodies and riffs, mutation, repeat/mutate/regenerate policy per layer |
 | `synth.rs` | Small polyphonic synth + drums + stereo delay; no allocation on the hot path |
 | `engine.rs` | Sequencer, `MusicConfig`, lock-free `MusicShared` control/status block |
-| `sound.rs` | Pre-decoded PCM clips, bounded sound command queue, one-shot and keyed-loop mixer |
+| `sound.rs` | PCM clips, bounded streaming prebuffers, sound command queue, one-shot and keyed-loop mixer |
 | `examples/render_wav.rs` | Headless CLI exporter for fixed-length WAV tracks |
 | `plugin.rs` | Bevy `Decodable` source, unified `AudioController`, plugin |
 

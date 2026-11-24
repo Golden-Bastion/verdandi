@@ -31,7 +31,9 @@ pub mod prelude {
     pub use crate::sound::{
         AudioBus, AudioClip, AudioClipError, LoopKey, SoundCategory, SoundCommandError,
         SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError,
-        SoundMixerCreateError, SoundMixerStatus, MAX_SOUND_VOICES,
+        SoundMixerCreateError, SoundMixerStatus, StreamBuffer, StreamBufferConfig,
+        StreamBufferConfigError, StreamWriteError, StreamWriter, AudioStream,
+        MAX_SOUND_VOICES, MAX_STREAM_BUFFER_FRAMES,
     };
     pub use crate::theory::{ScaleKind, Theme, ThemeOverrides};
 

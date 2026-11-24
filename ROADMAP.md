@@ -184,6 +184,8 @@ Status: **In progress**
 - [x] Define a bounded 64-command queue, non-blocking concurrent producer behavior, and a configurable voice limit up to 128.
 - [x] Reject newest play requests when the voice pool is full; retain existing voices and publish active/rejected counters.
 - [x] Add regression coverage for clip validation, resampling, ordering, replacement, fades, category isolation, voice limits, and queue overflow.
-- [ ] Define and implement a bounded prebuffered streaming-audio contract for long assets; decoding and file access must remain outside the render callback.
+- [x] Add fixed-capacity SPSC decoded-PCM stream buffers with configurable startup prebuffering and non-blocking partial writes.
+- [x] Define underflow as silence with automatic resume, and drain queued frames after explicit end-of-stream.
+- [x] Support keyed streamed ambience with existing fade/stop controls; keep decoding and resampling on the host worker at the mixer output rate.
 
-**Current boundary:** the host loads and decodes audio into immutable PCM, retains its asset references while voices play, and submits clip references to Verdandi. The mixer owns playback position, looping, fades, routing, and voice limits. Verdandi does not own the host asset catalogue or distribute recordings.
+**Current boundary:** the host owns its asset catalogue and performs file access, decoding, and stream resampling on worker threads. It supplies immutable resident clips or writes decoded output-rate frames into bounded stream buffers. Verdandi owns playback, prebuffer thresholds, underflow handling, fades, routing, and voice limits; it never accesses files or decodes in the render callback.
