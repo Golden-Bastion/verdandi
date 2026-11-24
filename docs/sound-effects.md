@@ -43,24 +43,31 @@ Resident clips may use a sample rate different from the mixer output rate; the m
 ~~~rust
 use std::sync::Arc;
 use std::time::Duration;
-use verdandi::prelude::{AudioController, AudioClip, LoopKey, SoundCategory};
+use verdandi::prelude::{
+    AudioClip, AudioController, LoopKey, SoundCategory, SoundCommandError,
+};
 
-fn update_environment(audio: &AudioController, rain: Arc<AudioClip>) {
-    // Start or replace the rain loop, fading in over two seconds.
-    let _ = audio.play_loop(
+fn start_rain(
+    audio: &AudioController,
+    rain: Arc<AudioClip>,
+) -> Result<(), SoundCommandError> {
+    audio.play_loop(
         LoopKey(100),
         rain,
         SoundCategory::Ambience,
         0.55,
         Duration::from_secs(2),
-    );
-
-    // Later, fade that loop to a quieter gain.
-    let _ = audio.fade_loop(LoopKey(100), 0.25, Duration::from_secs(3));
-
-    // Finally, fade it out and remove it.
-    let _ = audio.stop_loop(LoopKey(100), Duration::from_secs(2));
+    )
 }
+
+fn quiet_rain(audio: &AudioController) -> Result<(), SoundCommandError> {
+    audio.fade_loop(LoopKey(100), 0.25, Duration::from_secs(3))
+}
+
+fn stop_rain(audio: &AudioController) -> Result<(), SoundCommandError> {
+    audio.stop_loop(LoopKey(100), Duration::from_secs(2))
+}
+~~~
 ~~~
 
 A **LoopKey** is an application-defined stable identifier. Starting another loop with the same key replaces the existing voice at the next rendered frame; the replacement starts from the beginning of its clip. A non-zero fade-in starts the new voice at silence. Loop and master fades are linear. A later fade replaces the current fade from the gain already reached. A zero-duration stop removes the loop immediately.
@@ -72,11 +79,16 @@ Use different keys for sounds that must coexist. One-shot sounds do not need a k
 With Bevy's **AudioController**:
 
 ~~~rust
-audio.set_bus_volume(AudioBus::Effects, 0.65);
-audio.set_bus_muted(AudioBus::Ambience, true);
+use verdandi::prelude::{AudioBus, AudioController};
 
-let effects_gain = audio.bus_volume(AudioBus::Effects);
-let ambience_is_muted = audio.bus_muted(AudioBus::Ambience);
+fn balance_buses(audio: &AudioController) {
+    audio.set_bus_volume(AudioBus::Effects, 0.65);
+    audio.set_bus_muted(AudioBus::Ambience, true);
+
+    let effects_gain = audio.bus_volume(AudioBus::Effects);
+    let ambience_is_muted = audio.bus_muted(AudioBus::Ambience);
+}
+~~~
 ~~~
 
 The engine-independent **SoundController** has equivalent category-level controls through **set_category_volume**, **category_volume**, **set_category_muted**, and **category_muted**.
@@ -90,24 +102,30 @@ Use streaming when an asset is too large to keep as one resident clip or when a 
 Create the stream before starting playback:
 
 ~~~rust
+use std::sync::Arc;
 use verdandi::prelude::{
-    SoundCategory, StreamBuffer, StreamBufferConfig,
+    AudioController, AudioStream, SoundCategory, StreamBuffer,
+    StreamBufferConfig, StreamWriter,
 };
 
-let (mut writer, stream) = StreamBuffer::create(
-    StreamBufferConfig::new(
-        48_000, // stream / mixer sample rate
-        2,      // stereo
-        96_000, // capacity in frames: two seconds
-        4_800,  // startup prebuffer: 100 ms
-    ),
-)?;
+fn start_stream(
+    audio: &AudioController,
+) -> Result<(StreamWriter, Arc<AudioStream>), Box<dyn std::error::Error>> {
+    let (writer, stream) = StreamBuffer::create(
+        StreamBufferConfig::new(
+            48_000, // stream / mixer sample rate
+            2,      // stereo
+            96_000, // capacity in frames: two seconds
+            4_800,  // startup prebuffer: 100 ms
+        ),
+    )?;
 
-audio.play_stream(
-    stream.clone(),
-    SoundCategory::Ambience,
-    0.7,
-)?;
+    audio.play_stream(stream.clone(), SoundCategory::Ambience, 0.7)?;
+    Ok((writer, stream))
+}
+
+let (mut writer, stream) = start_stream(&audio)?;
+~~~
 ~~~
 
 The writer belongs on one host worker thread. It is not cloneable. The stream handle is submitted to Verdandi and can also be used by the host to inspect playback status.
