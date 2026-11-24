@@ -39,7 +39,7 @@ fn player_entered_combat(audio: Res<AudioController>) {
     audio.set_intensity(1.0);
     audio.set_preset(MusicPreset::HeavyMetal, MusicPace::Fast);
     audio.play_stinger(MusicStinger::CombatStart);
-    audio.set_layer_enabled(Layer::Choir, false);
+    audio.set_layer_enabled(Layer::RhythmGuitar, false);
 }
 
 fn player_entered_safe_area(audio: Res<AudioController>) {
@@ -120,6 +120,47 @@ fn toggle_host_sink(
 
 ## Advanced plugin setup
 
-**ProceduralMusicPlugin** has a public **autoplay** field. Set it to **false** when the plugin should register its resource and audio source without automatically spawning the player. In that mode, the application is responsible for creating and spawning the **ProceduralMusic** audio asset/player. Most applications should leave autoplay enabled.
+**ProceduralMusicPlugin** has a public **autoplay** field. Set it to **false** when the plugin should register its resource and audio source without automatically spawning the player. In that mode, the application is responsible for creating and spawning the **ProceduralMusic** audio asset/player. The application must retain the same **MusicConfig** it passed to the plugin:
+
+~~~rust
+use bevy::prelude::*;
+use verdandi::prelude::{
+    AudioController, MusicConfig, MusicTrack, ProceduralMusic,
+    ProceduralMusicPlugin,
+};
+
+#[derive(Resource, Clone)]
+struct AppMusicConfig(MusicConfig);
+
+fn spawn_custom_music_player(
+    mut commands: Commands,
+    mut assets: ResMut<Assets<ProceduralMusic>>,
+    audio: Res<AudioController>,
+    config: Res<AppMusicConfig>,
+) {
+    let source = assets.add(ProceduralMusic::with_sound_controller(
+        config.0.clone(),
+        audio.shared().clone(),
+        audio.sounds().clone(),
+    ));
+    commands.spawn((AudioPlayer(source), MusicTrack));
+}
+
+fn main() {
+    let config = MusicConfig::default();
+
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .insert_resource(AppMusicConfig(config.clone()))
+        .add_plugins(ProceduralMusicPlugin {
+            config,
+            autoplay: false,
+        })
+        .add_systems(Startup, spawn_custom_music_player)
+        .run();
+}
+~~~
+
+Most applications should leave autoplay enabled.
 
 The Bevy plugin uses the default sound voice limit of 32. Applications needing a different limit or a non-Bevy device/backend should use the engine-independent **SoundController** and **SoundMixer** APIs described in [custom audio hosts](custom-audio-hosts.md).
