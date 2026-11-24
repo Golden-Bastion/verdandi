@@ -123,7 +123,7 @@ impl ProceduralGenerator for WindGenerator {
 pub struct RainConfig {
     /// Output sample rate in Hz.
     pub sample_rate: u32,
-    /// Drop density, 0.0..=1.0.
+    /// Drop-event density, 0.0..=1.0.
     pub density: f32,
     /// High-frequency content, 0.0..=1.0.
     pub brightness: f32,
@@ -140,7 +140,8 @@ impl Drop {
     const SILENT: Self = Self { age: 1.0, decay: 1.0, amplitude: 0.0, phase: 0.0, phase_step: 0.0 };
     fn tick(&mut self, age_step: f32) -> f32 {
         if self.age >= 1.0 { return 0.0; }
-        let out = self.amplitude * (-self.age * self.decay).exp() * (TAU * (0.08 + self.age * 0.9)).sin();
+        let out = self.amplitude * (-self.age * self.decay).exp() * (TAU * self.phase).sin();
+        self.phase = (self.phase + self.phase_step).rem_euclid(1.0);
         self.age += age_step;
         out
     }
@@ -179,7 +180,9 @@ impl ProceduralGenerator for RainGenerator {
                 let drop = &mut self.drops[self.next_drop];
                 drop.age = 0.0;
                 drop.decay = 2.5 + self.rng.next_f32() * 4.5;
-                drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);\n                drop.phase = 0.0;\n                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
+                drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
+                drop.phase = 0.0;
+                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;\n                drop.phase = 0.0;\n                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
             }
             let age_step = 1.0 / (self.sample_rate * 0.055);
