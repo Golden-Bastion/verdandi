@@ -195,9 +195,7 @@ fn feed_decoded_chunks(
 }
 ~~~
 
-Call this helper for each decoded chunk, using a channel count that matches the stream configuration. It assumes that each chunk contains complete frames and finite samples. The mixer must be running concurrently so it can consume frames and make room in the ring. After the decoder has supplied its final chunk, call writer.finish(). Keep the writer and stream handle together on the worker until stream.is_active() becomes false; the worker may sleep briefly between status checks.
-
-When the decoder reaches end-of-stream, call **writer.finish()**. Verdandi drains all buffered frames before releasing the voice. If the stream reaches EOF before the startup prebuffer threshold is reached, it starts with the available data and drains it rather than waiting forever.
+The helper assumes that each decoded chunk contains complete stereo frames and finite samples. The mixer must be running concurrently so it can consume frames and make room in the ring. It signals end-of-stream after the final chunk, then keeps both handles alive on the worker until the mixer releases the voice. Verdandi drains all buffered frames before releasing the voice. If the stream reaches EOF before the startup prebuffer threshold is reached, it starts with the available data and drains it rather than waiting forever.
 
 For a one-shot stream, keep the **StreamWriter** and **Arc<AudioStream>** alive until **stream.is_active()** becomes false. This lifetime rule ensures the ring-buffer allocation is not freed by the render callback. **is_playing()** becomes true after the startup threshold has been reached and frames begin to be consumed. **underrun_frames()** reports frames for which the stream had no data after playback began. Underflow outputs silence and playback resumes automatically when new frames arrive.
 
