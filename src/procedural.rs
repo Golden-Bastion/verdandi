@@ -55,7 +55,7 @@ fn validate_unit(value: f32) -> Result<(), ProceduralError> {
     Ok(())
 }
 fn validate_output(output: &[f32]) -> Result<(), ProceduralError> {
-    if output.len() % 2 != 0 {
+    if !output.len().is_multiple_of(2) {
         return Err(ProceduralError::OutputMustContainStereoFrames);
     }
     Ok(())
@@ -128,7 +128,8 @@ impl WindGenerator {
 impl ProceduralGenerator for WindGenerator {
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
         validate_output(output)?;
-        for frame in output.chunks_exact_mut(2) {
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             let filtered = self.filter.tick(noise);
             self.phase = (self.phase + TAU * 0.07 / self.sample_rate).rem_euclid(TAU);
@@ -226,7 +227,8 @@ impl ProceduralGenerator for RainGenerator {
         validate_output(output)?;
         let probability = self.density * (120.0 / self.sample_rate);
         let coefficient = 0.025 + self.brightness * 0.65;
-        for frame in output.chunks_exact_mut(2) {
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             self.high_pass_state += coefficient * (noise - self.high_pass_state);
             let hiss = (noise - self.high_pass_state) * self.intensity * self.density * 0.10;
@@ -300,7 +302,8 @@ impl FootstepGenerator {
 impl ProceduralGenerator for FootstepGenerator {
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
         validate_output(output)?;
-        for frame in output.chunks_exact_mut(2) {
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
             if self.position >= self.total {
                 frame.fill(0.0);
                 continue;
@@ -375,7 +378,8 @@ impl ImpactGenerator {
 impl ProceduralGenerator for ImpactGenerator {
     fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
         validate_output(output)?;
-        for frame in output.chunks_exact_mut(2) {
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
             if self.position >= self.total {
                 frame.fill(0.0);
                 continue;
