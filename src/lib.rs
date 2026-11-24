@@ -27,7 +27,8 @@ pub mod prelude {
     pub use crate::preset::{MusicPace, MusicPreset};
     pub use crate::sound::{
         AudioBus, AudioClip, AudioClipError, LoopKey, SoundCategory, SoundCommandError,
-        SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError, SoundMixerStatus,
+        SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError, SoundMixerCreateError,
+        SoundMixerStatus,
         MAX_SOUND_VOICES,
     };
     pub use crate::sfz::{

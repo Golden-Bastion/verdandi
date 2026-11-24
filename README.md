@@ -154,12 +154,11 @@ use verdandi::prelude::*;
 
 fn play_world_audio(
     audio: &AudioController,
-    decoded_rain_pcm: Vec<f32>,
-    decoded_footstep_pcm: Vec<f32>,
+    rain: Arc<AudioClip>,
+    footstep: Arc<AudioClip>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let rain = Arc::new(AudioClip::from_samples(44_100, 1, decoded_rain_pcm)?);
-    let footstep = Arc::new(AudioClip::from_samples(44_100, 1, decoded_footstep_pcm)?);
-
+    // The caller obtains these shared clips from its own asset catalogue and keeps that
+    // catalogue's references alive for the duration of playback.
     audio.play_loop(
         LoopKey(10),
         rain.clone(),
@@ -177,7 +176,7 @@ fn play_world_audio(
 
 Keep the host's `Arc<AudioClip>` references in its asset catalogue while sounds can play. This keeps sample storage owned by the host and prevents its final release from occurring in the render callback. Reusing a `LoopKey` replaces that loop from its beginning; fades are linear and a newer fade starts from the currently reached gain. Stopping removes the voice after its fade completes. If the voice limit is reached, the newest play request is rejected and existing voices continue; the controller exposes the active and rejected counts.
 
-The command queue holds 64 requests. Submission never blocks: a full queue returns `QueueFull`, and simultaneous producer contention returns `ProducerBusy` so the caller can retry. The mixer linearly resamples clips to its output rate. This initial path uses pre-decoded PCM only; streamed playback requires a separate bounded prebuffer contract and is not yet provided.
+Only one active SoundMixer may consume a SoundController's queue; a second creation is rejected by try_create_mixer. The command queue holds 64 requests. Submission never blocks: a full queue returns `QueueFull`, and simultaneous producer contention returns `ProducerBusy` so the caller can retry. The mixer linearly resamples clips to its output rate. This initial path uses pre-decoded PCM only; streamed playback requires a separate bounded prebuffer contract and is not yet provided.
 
 For hosts without Bevy, create a `SoundController`, call `create_mixer()` before starting the audio callback, and mix `SoundMixer::render_frame()` with the music engine's frame output.
 

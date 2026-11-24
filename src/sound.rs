@@ -192,6 +192,21 @@ impl fmt::Display for SoundMixerConfigError {
 
 impl Error for SoundMixerConfigError {}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SoundMixerCreateError {
+    AlreadyCreated,
+}
+
+impl fmt::Display for SoundMixerCreateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AlreadyCreated => write!(f, "a sound controller already has an active mixer"),
+        }
+    }
+}
+
+impl Error for SoundMixerCreateError {}
+
 /// A non-blocking failure to submit a playback command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SoundCommandError {
@@ -222,7 +237,7 @@ pub struct SoundMixerStatus {
 
 /// Control-side handle for submitting sound playback commands.
 ///
-/// Commands are placed in a bounded queue. Concurrent producers are serialized with a
+/// Create exactly one active SoundMixer for each controller. Commands are placed in a bounded queue. Concurrent producers are serialized with a
 /// non-blocking atomic gate: a contending caller receives ProducerBusy instead of making the
 /// audio thread wait or spin.
 #[derive(Clone)]
@@ -247,12 +262,22 @@ impl SoundController {
         })
     }
 
-    /// Create the audio-thread-owned mixer that consumes this controller's commands.
+    /// Create the single audio-thread-owned mixer that consumes this controller's commands.
     ///
     /// Construct the mixer before starting the host audio callback so its voice storage is
-    /// allocated ahead of rendering.
+    /// allocated ahead of rendering. A second active mixer would violate the queue's
+    /// single-consumer contract and is rejected by try_create_mixer.
     pub fn create_mixer(&self) -> SoundMixer {
-        SoundMixer::new(self.shared.clone())
+        self.try_create_mixer()
+            .expect("a SoundController may only have one active SoundMixer")
+    }
+
+    pub fn try_create_mixer(&self) -> Result<SoundMixer, SoundMixerCreateError> {
+        self.shared
+            .consumer_active
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| SoundMixerCreateError::AlreadyCreated)?;
+        Ok(SoundMixer::new(self.shared.clone()))
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -380,6 +405,7 @@ struct SoundShared {
     config: SoundMixerConfig,
     commands: SpscQueue<AudioCommand, COMMAND_QUEUE_CAPACITY>,
     producer_active: AtomicBool,
+    consumer_active: AtomicBool,
     category_gain: [AtomicU32; 2],
     category_muted: [AtomicBool; 2],
     active_voices: AtomicUsize,
@@ -392,6 +418,7 @@ impl SoundShared {
             config,
             commands: SpscQueue::new(),
             producer_active: AtomicBool::new(false),
+            consumer_active: AtomicBool::new(false),
             category_gain: std::array::from_fn(|_| AtomicU32::new(1.0f32.to_bits())),
             category_muted: std::array::from_fn(|_| AtomicBool::new(false)),
             active_voices: AtomicUsize::new(0),
@@ -495,6 +522,16 @@ pub struct SoundMixer {
     shared: Arc<SoundShared>,
     voices: Vec<Voice>,
     sample_rate: u32,
+    _consumer_guard: ConsumerGuard,
+}
+
+struct ConsumerGuard(Arc<SoundShared>);
+
+impl Drop for ConsumerGuard {
+    fn drop(&mut self) {
+        self.0.active_voices.store(0, Ordering::Release);
+        self.0.consumer_active.store(false, Ordering::Release);
+    }
 }
 
 impl SoundMixer {
@@ -504,6 +541,7 @@ impl SoundMixer {
             .collect();
         Self {
             sample_rate: shared.config.sample_rate,
+            _consumer_guard: ConsumerGuard(shared.clone()),
             shared,
             voices,
         }
@@ -523,8 +561,8 @@ impl SoundMixer {
             self.shared.category_muted[1].load(Ordering::Acquire),
         ];
 
-        let mut left = 0.0;
-        let mut right = 0.0;
+        let mut left = 0.0f64;
+        let mut right = 0.0f64;
         let mut active = 0;
         for voice in &mut self.voices {
             if voice.clip.is_none() {
@@ -537,15 +575,19 @@ impl SoundMixer {
                 gains[category_index]
             };
             let (voice_left, voice_right) = voice.render(self.sample_rate, bus_gain);
-            left += voice_left;
-            right += voice_right;
+            left += f64::from(voice_left);
+            right += f64::from(voice_right);
             if voice.clip.is_some() {
                 active += 1;
             }
         }
 
         self.shared.active_voices.store(active, Ordering::Release);
-        (left, right)
+        let maximum = f64::from(f32::MAX);
+        (
+            left.clamp(-maximum, maximum) as f32,
+            right.clamp(-maximum, maximum) as f32,
+        )
     }
 
     /// Fill an interleaved stereo output slice.
@@ -879,6 +921,44 @@ mod tests {
             .unwrap();
         assert_eq!(mixer.render_frame(), (0.7, 0.7));
         assert_eq!(controller.status().active_voices, 1);
+    }
+
+    #[test]
+    fn queued_loop_commands_are_applied_in_submission_order() {
+        let (controller, mut mixer) = system(4, 1);
+        controller
+            .play_loop(
+                LoopKey(19),
+                clip(4, 1, vec![0.1; 4]),
+                SoundCategory::Ambience,
+                1.0,
+                Duration::ZERO,
+            )
+            .unwrap();
+        controller
+            .play_loop(
+                LoopKey(19),
+                clip(4, 1, vec![0.8; 4]),
+                SoundCategory::Ambience,
+                1.0,
+                Duration::ZERO,
+            )
+            .unwrap();
+
+        assert_eq!(mixer.render_frame(), (0.8, 0.8));
+        assert_eq!(controller.status().active_voices, 1);
+    }
+
+    #[test]
+    fn controller_enforces_a_single_active_mixer() {
+        let controller = SoundController::new(SoundMixerConfig::new(4, 1)).unwrap();
+        let mixer = controller.create_mixer();
+        assert!(matches!(
+            controller.try_create_mixer(),
+            Err(SoundMixerCreateError::AlreadyCreated)
+        ));
+        drop(mixer);
+        assert!(controller.try_create_mixer().is_ok());
     }
 
     #[test]
