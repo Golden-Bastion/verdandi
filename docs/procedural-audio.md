@@ -1,6 +1,8 @@
 # Procedural sound generation
 
-Verdandi provides deterministic, engine-independent procedural generators for non-musical sounds. They render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments.
+Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The first built-in generators are wind, rain, footsteps, and impacts; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
+
+Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
 
 ## Generating a finite effect
 
@@ -60,4 +62,9 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. Their output is intentionally stylized rather than a claim of physically accurate environmental simulation.
+These are initial sound-design building blocks, not a closed catalogue of supported effects. Future families may include weapon impacts and blade clashes, parries and blocks, armor and shield hits, character exertion and death sounds, blood-splatter effects, material-specific breakage, and debris. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+
+
+## Application independence
+
+Game-oriented APIs are appropriate in Verdandi. A `SwordClashGenerator` or a reusable material-impact descriptor is not inherently application-specific. An API that looks up a particular game's combat entities, subscribes to its event bus, or encodes its world rules would be. Keep event timing and gameplay meaning in the host; keep reusable sound design and audio rendering in Verdandi.
