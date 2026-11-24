@@ -173,3 +173,19 @@ Status: **In progress**
 - [x] Define overlapping fade requests as replacement from the current gain.
 - [x] Apply master gain after music, stinger, and preset-transition mixing.
 - [x] Cover pause position preservation, gain clamping, fade progression, and replacement semantics with regression tests.
+
+
+## Environmental ambience and sound effects
+
+- [x] Add host-owned immutable mono/stereo PCM clips with validation and sample-rate conversion.
+- [x] Add bounded one-shot and persistent keyed-loop playback alongside procedural music.
+- [x] Define same-key replacement, per-loop fades, fade-out stopping, and no-stale-loop semantics.
+- [x] Add independent effects and ambience gain/mute controls; expose music/effects/ambience buses through the Bevy controller.
+- [x] Define a bounded 64-command queue, non-blocking concurrent producer behavior, and a configurable voice limit up to 128.
+- [x] Reject newest play requests when the voice pool is full; retain existing voices and publish active/rejected counters.
+- [x] Add regression coverage for clip validation, resampling, ordering, replacement, fades, category isolation, voice limits, and queue overflow.
+- [x] Add fixed-capacity SPSC decoded-PCM stream buffers with configurable startup prebuffering and non-blocking partial writes.
+- [x] Define underflow as silence with automatic resume, and drain queued frames after explicit end-of-stream.
+- [x] Support keyed streamed ambience with existing fade/stop controls; keep decoding and resampling on the host worker at the mixer output rate.
+
+**Current boundary:** the host owns its asset catalogue and performs file access, decoding, and stream resampling on worker threads. It supplies immutable resident clips or writes decoded output-rate frames into bounded stream buffers. Verdandi owns playback, prebuffer thresholds, underflow handling, fades, routing, and voice limits; it never accesses files or decodes in the render callback.

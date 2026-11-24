@@ -15,6 +15,10 @@ use bevy::reflect::TypePath;
 use crate::composer::Layer;
 use crate::engine::{Engine, MusicConfig, MusicShared, MusicStatus, MusicStinger};
 use crate::preset::{MusicPace, MusicPreset};
+use crate::sound::{
+    AudioBus, AudioClip, SoundCategory, SoundCommandError, SoundController, SoundMixer,
+    SoundMixerConfig,
+};
 
 const CHUNK_FRAMES: usize = 512;
 
@@ -24,16 +28,34 @@ const CHUNK_FRAMES: usize = 512;
 pub struct ProceduralMusic {
     shared: Arc<MusicShared>,
     config: MusicConfig,
+    sounds: SoundController,
 }
 
 impl ProceduralMusic {
     pub fn new(config: MusicConfig, shared: Arc<MusicShared>) -> Self {
-        Self { shared, config }
+        let sound_config =
+            SoundMixerConfig::new(config.sample_rate, SoundMixerConfig::default().max_voices);
+        let sounds = SoundController::new(sound_config)
+            .expect("ProceduralMusic requires a non-zero sample rate");
+        Self::with_sound_controller(config, shared, sounds)
+    }
+
+    pub fn with_sound_controller(
+        config: MusicConfig,
+        shared: Arc<MusicShared>,
+        sounds: SoundController,
+    ) -> Self {
+        Self {
+            shared,
+            config,
+            sounds,
+        }
     }
 }
 
 pub struct MusicDecoder {
     engine: Engine,
+    mixer: SoundMixer,
     buf: Vec<f32>,
     pos: usize,
     sample_rate: u32,
@@ -44,7 +66,12 @@ impl Iterator for MusicDecoder {
 
     fn next(&mut self) -> Option<f32> {
         if self.pos >= self.buf.len() {
-            self.engine.render_interleaved(&mut self.buf);
+            for frame in self.buf.chunks_exact_mut(2) {
+                let music = self.engine.render_frame();
+                let sounds = self.mixer.render_frame();
+                frame[0] = (music.0 + sounds.0).clamp(-1.0, 1.0);
+                frame[1] = (music.1 + sounds.1).clamp(-1.0, 1.0);
+            }
             self.pos = 0;
         }
         let sample = self.buf[self.pos];
@@ -78,6 +105,7 @@ impl Decodable for ProceduralMusic {
         let frames = CHUNK_FRAMES * 2;
         MusicDecoder {
             engine: Engine::new(self.shared.clone(), &self.config),
+            mixer: self.sounds.create_mixer(),
             buf: vec![0.0; frames],
             pos: frames, // forces a render on the first sample
             sample_rate: self.config.sample_rate,
@@ -91,11 +119,15 @@ pub struct MusicTrack;
 
 /// Game-side handle to the running music.
 #[derive(Resource, Clone)]
-pub struct MusicController {
+pub struct AudioController {
     shared: Arc<MusicShared>,
+    sounds: SoundController,
 }
 
-impl MusicController {
+/// Backwards-compatible name for the unified music and sound controller.
+pub type MusicController = AudioController;
+
+impl AudioController {
     pub fn shared(&self) -> &Arc<MusicShared> {
         &self.shared
     }
@@ -188,11 +220,120 @@ impl MusicController {
     pub fn status(&self) -> MusicStatus {
         self.shared.status()
     }
+
+    /// Access the engine-independent sound command handle.
+    pub fn sounds(&self) -> &SoundController {
+        &self.sounds
+    }
+
+    /// Queue a one-shot sound effect or environmental cue.
+    pub fn play_one_shot(
+        &self,
+        clip: Arc<AudioClip>,
+        category: SoundCategory,
+        gain: f32,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.play_one_shot(clip, category, gain)
+    }
+
+    /// Start or replace a keyed environmental loop.
+    pub fn play_loop(
+        &self,
+        key: crate::sound::LoopKey,
+        clip: Arc<AudioClip>,
+        category: SoundCategory,
+        gain: f32,
+        fade_in: Duration,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.play_loop(key, clip, category, gain, fade_in)
+    }
+
+    pub fn fade_loop(
+        &self,
+        key: crate::sound::LoopKey,
+        gain: f32,
+        duration: Duration,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.fade_loop(key, gain, duration)
+    }
+
+    pub fn stop_loop(
+        &self,
+        key: crate::sound::LoopKey,
+        fade_out: Duration,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.stop_loop(key, fade_out)
+    }
+
+    /// Play a host-fed decoded stream as a one-shot sound.
+    pub fn play_stream(
+        &self,
+        stream: Arc<crate::sound::AudioStream>,
+        category: SoundCategory,
+        gain: f32,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds.play_stream(stream, category, gain)
+    }
+
+    /// Start a keyed host-fed stream; use stop_loop to fade and stop it.
+    pub fn play_stream_loop(
+        &self,
+        key: crate::sound::LoopKey,
+        stream: Arc<crate::sound::AudioStream>,
+        category: SoundCategory,
+        gain: f32,
+        fade_in: Duration,
+    ) -> Result<(), SoundCommandError> {
+        self.sounds
+            .play_stream_loop(key, stream, category, gain, fade_in)
+    }
+
+    /// Set an independent music, effects, or ambience bus gain immediately.
+    pub fn set_bus_volume(&self, bus: AudioBus, gain: f32) {
+        match bus {
+            AudioBus::Music => self.shared.set_volume(gain),
+            AudioBus::Effects => self
+                .sounds
+                .set_category_volume(SoundCategory::Effects, gain),
+            AudioBus::Ambience => self
+                .sounds
+                .set_category_volume(SoundCategory::Ambience, gain),
+        }
+    }
+
+    pub fn bus_volume(&self, bus: AudioBus) -> f32 {
+        match bus {
+            AudioBus::Music => self.shared.volume(),
+            AudioBus::Effects => self.sounds.category_volume(SoundCategory::Effects),
+            AudioBus::Ambience => self.sounds.category_volume(SoundCategory::Ambience),
+        }
+    }
+
+    pub fn set_bus_muted(&self, bus: AudioBus, muted: bool) {
+        match bus {
+            AudioBus::Music => self.shared.set_muted(muted),
+            AudioBus::Effects => self
+                .sounds
+                .set_category_muted(SoundCategory::Effects, muted),
+            AudioBus::Ambience => self
+                .sounds
+                .set_category_muted(SoundCategory::Ambience, muted),
+        }
+    }
+
+    pub fn bus_muted(&self, bus: AudioBus) -> bool {
+        match bus {
+            AudioBus::Music => self.shared.is_muted(),
+            AudioBus::Effects => self.sounds.category_muted(SoundCategory::Effects),
+            AudioBus::Ambience => self.sounds.category_muted(SoundCategory::Ambience),
+        }
+    }
 }
 
 #[derive(Resource)]
 struct MusicSetup {
     shared: Arc<MusicShared>,
+    sounds: SoundController,
     config: MusicConfig,
     autoplay: bool,
 }
@@ -221,12 +362,20 @@ impl Default for ProceduralMusicPlugin {
 impl Plugin for ProceduralMusicPlugin {
     fn build(&self, app: &mut App) {
         let shared = Arc::new(MusicShared::new(&self.config));
+        let sound_config = SoundMixerConfig::new(
+            self.config.sample_rate,
+            SoundMixerConfig::default().max_voices,
+        );
+        let sounds = SoundController::new(sound_config)
+            .expect("ProceduralMusicPlugin requires a non-zero sample rate");
         app.add_audio_source::<ProceduralMusic>()
-            .insert_resource(MusicController {
+            .insert_resource(AudioController {
                 shared: shared.clone(),
+                sounds: sounds.clone(),
             })
             .insert_resource(MusicSetup {
                 shared,
+                sounds,
                 config: self.config.clone(),
                 autoplay: self.autoplay,
             })
@@ -242,9 +391,10 @@ fn start_music(
     if !setup.autoplay {
         return;
     }
-    let handle = assets.add(ProceduralMusic::new(
+    let handle = assets.add(ProceduralMusic::with_sound_controller(
         setup.config.clone(),
         setup.shared.clone(),
+        setup.sounds.clone(),
     ));
     commands.spawn((AudioPlayer(handle), MusicTrack));
 }

@@ -4,14 +4,15 @@
 //! chord progression); each layer (drums, bass, pad, arp, lead) then repeats, mutates or
 //! regenerates its pattern every 4-bar loop. Same seed => same evolving track.
 //!
-//! * `rng`, `theory`, `composer`, `synth`, `engine`: engine-agnostic core (no dependencies).
-//! * `plugin` (feature `bevy-plugin`, on by default): Bevy audio source + controller resource.
+//! * `rng`, `theory`, `composer`, `synth`, `engine`, `sound`: engine-agnostic core (no Bevy dependency).
+//! * `plugin` (feature `bevy-plugin`, on by default): Bevy audio source + unified audio controller.
 
 pub mod composer;
 pub mod engine;
 pub mod preset;
 pub mod rng;
 pub mod sfz;
+pub mod sound;
 pub mod synth;
 pub mod theory;
 
@@ -27,8 +28,17 @@ pub mod prelude {
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
     };
+    pub use crate::sound::{
+        AudioBus, AudioClip, AudioClipError, AudioStream, LoopKey, SoundCategory,
+        SoundCommandError, SoundController, SoundMixer, SoundMixerConfig, SoundMixerConfigError,
+        SoundMixerCreateError, SoundMixerStatus, StreamBuffer, StreamBufferConfig,
+        StreamBufferConfigError, StreamWriteError, StreamWriter, MAX_SOUND_VOICES,
+        MAX_STREAM_BUFFER_FRAMES,
+    };
     pub use crate::theory::{ScaleKind, Theme, ThemeOverrides};
 
     #[cfg(feature = "bevy-plugin")]
-    pub use crate::plugin::{MusicController, MusicTrack, ProceduralMusic, ProceduralMusicPlugin};
+    pub use crate::plugin::{
+        AudioController, MusicController, MusicTrack, ProceduralMusic, ProceduralMusicPlugin,
+    };
 }
