@@ -9,14 +9,14 @@ Verdandi is split into reusable audio systems with a small optional host integra
 | Theme and composition | **Theme**, **ThemeOverrides**, **Composer**, **Layer**, **LoopPlan**, **NoteEvent** | Seed-derived musical frame and four-bar layer patterns |
 | Music rendering | **MusicConfig**, **MusicShared**, **Engine**, **MusicStatus** | Sequencing, synthesis, transport, stingers, and music gain |
 | Sample instruments | **SfzInstrument**, **SfzSampler**, **InstrumentConfig** | Optional decoded WAV sample playback from SFZ mappings |
-| Procedural sound generation | **ProceduralGenerator**, **WindGenerator**, **RainGenerator**, **FootstepGenerator**, **ImpactGenerator** | Deterministic non-musical PCM generation into caller-owned buffers |
+| Procedural sound generation | **ProceduralGenerator**, **WindGenerator**, **RainGenerator**, **FootstepGenerator**, **ImpactGenerator** | Deterministic, game-oriented effects and ambience rendered into caller-owned buffers |
 | Sound playback | **AudioClip**, **SoundController**, **SoundMixer** | Resident PCM one-shots, keyed loops, fades, categories, and voice limits |
 | Sound streaming | **StreamBuffer**, **StreamWriter**, **AudioStream** | Bounded decoded-PCM producer/consumer path |
 | Bevy adapter | **ProceduralMusicPlugin**, **AudioController**, **MusicTrack** | Bevy audio source, controller resource, and combined music/sound output |
 
 ## Ownership model
 
-Verdandi does not own the application's asset catalogue or decide where the application stores audio files.
+Verdandi provides reusable game-audio concepts and sound generators, but does not own the application's asset catalogue or decide where the application stores audio files. The host decides when a gameplay sound should occur and supplies any host-owned assets; Verdandi handles the reusable sound-generation and playback behavior.
 
 - The host loads and decodes resident effects, constructs **AudioClip** values, and retains its owning **Arc<AudioClip>** references while they can be queued or playing.
 - The host loads SFZ patches and their referenced WAV samples through **SfzInstrument::load** or **load_with_sample_root** before constructing the music engine.
@@ -71,7 +71,7 @@ Most applications should start with:
 
 - **MusicConfig** and either **ProceduralMusicPlugin** or **Engine**.
 - **AudioController** when using Bevy, or **MusicShared** for custom-host music control.
-- **ProceduralGenerator** and its built-in generators for deterministic non-musical sound generation.
+- **ProceduralGenerator** and its built-in generators for deterministic game-audio effects and ambience.
 - **AudioClip**, **SoundCategory**, and **SoundController** for resident effects.
 - **StreamBuffer** and **StreamWriter** for incremental decoded audio.
 - **SfzInstrument** only when using external SFZ sample libraries.
