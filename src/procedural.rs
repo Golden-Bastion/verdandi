@@ -182,7 +182,8 @@ impl ProceduralGenerator for RainGenerator {
                 drop.decay = 2.5 + self.rng.next_f32() * 4.5;
                 drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
                 drop.phase = 0.0;
-                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;\n                drop.phase = 0.0;\n                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
+                drop.phase = 0.0;
+                drop.phase_step = (900.0 + self.rng.next_f32() * 3_000.0) / self.sample_rate;
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
             }
             let age_step = 1.0 / (self.sample_rate * 0.055);
