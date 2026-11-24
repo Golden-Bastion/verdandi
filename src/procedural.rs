@@ -322,7 +322,10 @@ mod tests {
         assert_eq!(expected, actual);
         let mut rain_a = RainGenerator::new(RainConfig::default(), 91).unwrap();
         let mut rain_b = RainGenerator::new(RainConfig::default(), 91).unwrap();
-        assert_eq!(render(&mut rain_a, 2048), render(&mut rain_b, 2048));
+        let rain_samples = render(&mut rain_a, 2048);
+        assert_eq!(rain_samples, render(&mut rain_b, 2048));
+        bounded(&rain_samples);
+        assert!(rain_samples.iter().any(|sample| sample.abs() > 0.001));
     }
 
     #[test]
