@@ -287,6 +287,8 @@ impl StreamBuffer {
             config,
             frames: SpscFrameRing::new(config.capacity_frames),
             finished: AtomicBool::new(false),
+        });
+        let status = Arc::new(StreamStatus {
             consumer_active: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             underrun_frames: AtomicU64::new(0),
@@ -294,8 +296,9 @@ impl StreamBuffer {
         Ok((
             StreamWriter {
                 shared: shared.clone(),
+                status: status.clone(),
             },
-            Arc::new(AudioStream { shared }),
+            Arc::new(AudioStream { shared, status }),
         ))
     }
 }
@@ -306,6 +309,7 @@ impl StreamBuffer {
 /// retry after the audio consumer has advanced it. The writer is intentionally not cloneable.
 pub struct StreamWriter {
     shared: Arc<StreamShared>,
+    status: Arc<StreamStatus>,
 }
 
 impl StreamWriter {
@@ -359,6 +363,7 @@ impl StreamWriter {
 /// render callback when a stream finishes or is stopped.
 pub struct AudioStream {
     shared: Arc<StreamShared>,
+    status: Arc<StreamStatus>,
 }
 
 impl AudioStream {
@@ -382,14 +387,14 @@ impl AudioStream {
     }
     /// True from successful command submission until the mixer releases the stream voice.
     pub fn is_active(&self) -> bool {
-        self.shared.consumer_active.load(Ordering::Acquire)
+        self.status.consumer_active.load(Ordering::Acquire)
     }
     /// True after the startup prebuffer has been reached and frames are being consumed.
     pub fn is_playing(&self) -> bool {
-        self.shared.playing.load(Ordering::Acquire)
+        self.status.playing.load(Ordering::Acquire)
     }
     pub fn underrun_frames(&self) -> u64 {
-        self.shared.underrun_frames.load(Ordering::Relaxed)
+        self.status.underrun_frames.load(Ordering::Relaxed)
     }
 }
 
@@ -397,6 +402,9 @@ struct StreamShared {
     config: StreamBufferConfig,
     frames: SpscFrameRing,
     finished: AtomicBool,
+}
+
+struct StreamStatus {
     consumer_active: AtomicBool,
     playing: AtomicBool,
     underrun_frames: AtomicU64,
@@ -716,7 +724,7 @@ impl SoundController {
         {
             return Err(SoundCommandError::StreamAlreadyActive);
         }
-        let shared = stream.shared.clone();
+        let status = stream.status.clone();
         let result = self.submit(AudioCommand::PlayStream {
             key,
             stream,
@@ -725,7 +733,7 @@ impl SoundController {
             fade_in_frames: duration_frames(fade_in, self.sample_rate()),
         });
         if result.is_err() {
-            shared.consumer_active.store(false, Ordering::Release);
+            status.consumer_active.store(false, Ordering::Release);
         }
         result
     }
@@ -917,11 +925,7 @@ impl Drop for ConsumerGuard {
     fn drop(&mut self) {
         while let Some(command) = self.0.commands.pop() {
             if let AudioCommand::PlayStream { stream, .. } = command {
-                stream.shared.playing.store(false, Ordering::Release);
-                stream
-                    .shared
-                    .consumer_active
-                    .store(false, Ordering::Release);
+                release_stream(stream);
             }
         }
         self.0.active_voices.store(0, Ordering::Release);
@@ -1051,7 +1055,7 @@ impl SoundMixer {
                 } else if let Some(voice) = self.voices.iter_mut().find(|voice| voice.is_idle()) {
                     voice.start_stream(stream, key, category, gain, fade_in_frames);
                 } else {
-                    stream.shared.playing.store(false, Ordering::Release);
+                    stream.status.playing.store(false, Ordering::Release);
                     stream
                         .shared
                         .consumer_active
@@ -1128,11 +1132,7 @@ impl Voice {
         fade_in_frames: u64,
     ) {
         if let Some(previous) = self.stream.take() {
-            previous.shared.playing.store(false, Ordering::Release);
-            previous
-                .shared
-                .consumer_active
-                .store(false, Ordering::Release);
+            release_stream(previous);
         }
         self.clip = Some(clip);
         self.stream_started = false;
@@ -1160,11 +1160,7 @@ impl Voice {
         fade_in_frames: u64,
     ) {
         if let Some(previous) = self.stream.take() {
-            previous.shared.playing.store(false, Ordering::Release);
-            previous
-                .shared
-                .consumer_active
-                .store(false, Ordering::Release);
+            release_stream(previous);
         }
         self.clip = None;
         self.stream = Some(stream);
@@ -1200,15 +1196,8 @@ impl Voice {
 
     fn render(&mut self, output_rate: u32, bus_gain: f32) -> (f32, f32) {
         if let Some(stream) = self.stream.take() {
-            let (output, finished) = self.render_stream(&stream, bus_gain);
-            if finished {
-                stream.shared.playing.store(false, Ordering::Release);
-                stream
-                    .shared
-                    .consumer_active
-                    .store(false, Ordering::Release);
-                self.clear();
-            } else {
+            release_stream(stream);
+        } else {
                 self.stream = Some(stream);
             }
             return output;
@@ -1273,7 +1262,7 @@ impl Voice {
                 return ((0.0, 0.0), true);
             }
             self.stream_started = true;
-            stream.shared.playing.store(true, Ordering::Release);
+            stream.status.playing.store(true, Ordering::Release);
         }
 
         let Some(frame) = stream.shared.frames.pop() else {
@@ -1320,11 +1309,7 @@ impl Voice {
     fn clear(&mut self) {
         self.clip = None;
         if let Some(stream) = self.stream.take() {
-            stream.shared.playing.store(false, Ordering::Release);
-            stream
-                .shared
-                .consumer_active
-                .store(false, Ordering::Release);
+            release_stream(stream);
         }
         self.stream_started = false;
         self.loop_key = None;
@@ -1337,6 +1322,15 @@ impl Voice {
         self.fade_total_frames = 0;
         self.stop_after_fade = false;
     }
+}
+
+// Release the large ring allocation before publishing inactivity. The host retains the
+// writer/stream handles while active, so the buffer is reclaimed away from the render callback.
+fn release_stream(stream: Arc<AudioStream>) {
+    let status = stream.status.clone();
+    status.playing.store(false, Ordering::Release);
+    drop(stream);
+    status.consumer_active.store(false, Ordering::Release);
 }
 
 impl Drop for Voice {
