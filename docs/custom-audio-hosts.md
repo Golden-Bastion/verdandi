@@ -61,7 +61,6 @@ fn build_audio_path() -> Result<AudioPath, Box<dyn std::error::Error>> {
         controls,
     })
 }
-let game_audio_control = sound_control.clone();
 ~~~
 
 For each output frame, render music and effects and combine them:
