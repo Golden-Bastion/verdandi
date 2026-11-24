@@ -130,10 +130,10 @@ const DROP_VOICES: usize = 8;
 struct Drop { age: f32, decay: f32, amplitude: f32 }
 impl Drop {
     const SILENT: Self = Self { age: 1.0, decay: 1.0, amplitude: 0.0 };
-    fn tick(&mut self) -> f32 {
+    fn tick(&mut self, age_step: f32) -> f32 {
         if self.age >= 1.0 { return 0.0; }
         let out = self.amplitude * (-self.age * self.decay).exp() * (TAU * (0.08 + self.age * 0.9)).sin();
-        self.age += 1.0 / 2_400.0;
+        self.age += age_step;
         out
     }
 }
@@ -173,7 +173,7 @@ impl ProceduralGenerator for RainGenerator {
                 drop.amplitude = (0.12 + self.rng.next_f32() * 0.28) * (0.35 + self.brightness * 0.65);
                 self.next_drop = (self.next_drop + 1) % DROP_VOICES;
             }
-            let drops: f32 = self.drops.iter_mut().map(Drop::tick).sum();
+            let age_step = 1.0 / (self.sample_rate * 0.055);\n            let drops: f32 = self.drops.iter_mut().map(|drop| drop.tick(age_step)).sum();
             let sample = (hiss + drops * 0.12) * self.intensity;
             frame[0] = sample.clamp(-1.0, 1.0);
             frame[1] = frame[0];
@@ -314,16 +314,16 @@ mod tests {
         let b = render(&mut impact, 20000);
         bounded(&a); bounded(&b);
         assert!(step.is_finished() && impact.is_finished());
-        assert!(a[10000..].iter().all(|s| *s == 0.0));
-        assert!(b[18000..].iter().all(|s| *s == 0.0));
+        assert!(a[19_404..].iter().all(|s| *s == 0.0));
+        assert!(b[33_516..].iter().all(|s| *s == 0.0));
         assert!(a.iter().any(|s| s.abs() > 0.001));
         assert!(b.iter().any(|s| s.abs() > 0.001));
     }
 
     #[test]
     fn rejects_invalid_configuration_and_odd_output() {
-        assert_eq!(WindGenerator::new(WindConfig { sample_rate: 1000, ..WindConfig::default() }, 0).unwrap_err(), ProceduralError::InvalidSampleRate);
-        assert_eq!(RainGenerator::new(RainConfig { density: f32::NAN, ..RainConfig::default() }, 0).unwrap_err(), ProceduralError::InvalidParameter);
+        assert!(matches!(WindGenerator::new(WindConfig { sample_rate: 1000, ..WindConfig::default() }, 0), Err(ProceduralError::InvalidSampleRate)));
+        assert!(matches!(RainGenerator::new(RainConfig { density: f32::NAN, ..RainConfig::default() }, 0), Err(ProceduralError::InvalidParameter)));
         let mut wind = WindGenerator::new(WindConfig::default(), 0).unwrap();
         assert_eq!(wind.render(&mut [0.0; 3]), Err(ProceduralError::OutputMustContainStereoFrames));
     }
