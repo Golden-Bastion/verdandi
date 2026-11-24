@@ -84,7 +84,7 @@ To take direct control, disable automatic intensity and set a value from 0.0 to 
 ~~~rust
 audio.set_auto_intensity(false);
 audio.set_intensity(0.85);
-audio.set_layer_enabled(Layer::Choir, false);
+audio.set_layer_enabled(Layer::Lead, false);
 ~~~
 
 The example above uses the Bevy **AudioController**; the same operations are available on **MusicShared** in a custom host. Values are clamped to the supported range.
