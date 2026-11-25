@@ -405,7 +405,6 @@ impl ProceduralGenerator for ImpactGenerator {
     }
 }
 
-
 /// Material profile used to shape a procedural weapon impact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImpactMaterial {
@@ -524,15 +523,11 @@ impl WeaponImpactGenerator {
             config.kind.profile();
         let mut rng = Rng::new(derive_seed(seed, 0x5745_4150, 0));
         let force_pitch = 1.12 - config.force * 0.20;
-        let frequency_a = (base_frequency
-            * force_pitch
-            * (0.94 + rng.next_f32() * 0.12))
+        let frequency_a = (base_frequency * force_pitch * (0.94 + rng.next_f32() * 0.12))
             .min(config.sample_rate as f32 * 0.40);
-        let frequency_b = (base_frequency
-            * overtone_ratio
-            * force_pitch
-            * (0.94 + rng.next_f32() * 0.12))
-            .min(config.sample_rate as f32 * 0.40);
+        let frequency_b =
+            (base_frequency * overtone_ratio * force_pitch * (0.94 + rng.next_f32() * 0.12))
+                .min(config.sample_rate as f32 * 0.40);
         let body_frequency =
             (body_frequency * (1.08 - config.force * 0.16)).min(config.sample_rate as f32 * 0.40);
         let ring_phase_a = rng.next_f32();
@@ -581,11 +576,8 @@ impl ProceduralGenerator for WeaponImpactGenerator {
             let transient = (noise - self.noise_state)
                 * (-t * self.transient_decay).exp()
                 * self.transient_gain;
-            let ring = (self.ring_phase_a * TAU).sin()
-                * (-t * self.ring_decay).exp()
-                + (self.ring_phase_b * TAU).sin()
-                    * (-t * self.ring_decay * 1.28).exp()
-                    * 0.42;
+            let ring = (self.ring_phase_a * TAU).sin() * (-t * self.ring_decay).exp()
+                + (self.ring_phase_b * TAU).sin() * (-t * self.ring_decay * 1.28).exp() * 0.42;
             let body = (self.body_phase * TAU).sin() * (-t * (12.0 + self.ring_decay)).exp();
 
             let sample = (transient + ring * self.ring_gain * 0.46 + body * self.body_gain * 0.34)
@@ -829,12 +821,10 @@ mod tests {
             ),
             Err(ProceduralError::InvalidSampleRate)
         ));
-        let mut impact =
-            WeaponImpactGenerator::new(WeaponImpactConfig::default(), 0).unwrap();
+        let mut impact = WeaponImpactGenerator::new(WeaponImpactConfig::default(), 0).unwrap();
         assert_eq!(
             impact.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
         );
     }
-
 }
