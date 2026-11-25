@@ -71,7 +71,7 @@ Most applications should start with:
 
 - **MusicConfig** and either **ProceduralMusicPlugin** or **Engine**.
 - **AudioController** when using Bevy, or **MusicShared** for custom-host music control.
-- **ProceduralGenerator** and its built-in generators for deterministic game-audio effects and ambience, including material-shaped weapon contacts, shield blocks, projectile impacts, and breakage with deterministic debris.
+- **ProceduralGenerator** and its built-in generators for deterministic game-audio effects and ambience, including material-shaped weapon contacts, shield blocks, projectile impacts, breakage, and non-vocal character movement.
 - **AudioClip**, **SoundCategory**, and **SoundController** for resident effects.
 - **StreamBuffer** and **StreamWriter** for incremental decoded audio.
 - **SfzInstrument** only when using external SFZ sample libraries.
