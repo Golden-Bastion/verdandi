@@ -992,7 +992,6 @@ mod tests {
         let mut shield = WeaponImpactGenerator::new(
             WeaponImpactConfig {
                 material: ImpactMaterial::Shield,
-                kind: WeaponImpactKind::Block,
                 ..base
             },
             99,
