@@ -197,12 +197,13 @@ Status: **In progress**
 - [x] Add deterministic wind and rain ambience generators.
 - [x] Add deterministic one-shot footstep and generic impact generators.
 - [x] Add weapon-contact generation for strikes, blade clashes, parries, and blocks with material, force, and intensity controls.
+- [x] Add a shield material profile and projectile-impact kind to the weapon-contact generator.
 - [x] Validate sample rates, normalized parameters, and stereo buffer shape.
 - [x] Cover deterministic block rendering, finite-effect completion, output bounds, and parameter response with regression tests.
 - [x] Document finite-clip and continuous-stream integration.
 - [ ] Audition generated sounds at representative sample rates and tune their acoustic character.
 - [x] Add material-specific breakage with deterministic, fixed-capacity fragment events and size/force/intensity controls.
-- [ ] Expand the generator toolkit with shield/armor-specific contacts, character actions and death sounds, blood-splatter effects, and further object destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
+- [ ] Expand the generator toolkit with weapon handling, character actions and death sounds, blood-splatter effects, and further object destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
 
 **Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
 
