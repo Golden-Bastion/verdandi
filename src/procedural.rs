@@ -714,4 +714,127 @@ mod tests {
         .unwrap();
         assert_ne!(render(&mut quiet, 2048), render(&mut loud, 2048));
     }
+
+    #[test]
+    fn weapon_impacts_are_deterministic_across_render_blocks() {
+        let config = WeaponImpactConfig::default();
+        let mut whole = WeaponImpactGenerator::new(config, 0x51A7).unwrap();
+        let mut split = WeaponImpactGenerator::new(config, 0x51A7).unwrap();
+        let expected = render(&mut whole, 20_000);
+        let mut actual = render(&mut split, 7_000);
+        actual.extend(render(&mut split, 13_000));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+        let end = (config.sample_rate as usize * 42 / 100) * 2;
+        assert!(expected[end..].iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn weapon_impact_materials_and_contact_kinds_change_the_sound() {
+        let base = WeaponImpactConfig::default();
+        let mut metal = WeaponImpactGenerator::new(base, 99).unwrap();
+        let mut wood = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Wood,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
+        let mut flesh = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Flesh,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
+        let metal_pcm = render(&mut metal, 12_000);
+        let wood_pcm = render(&mut wood, 12_000);
+        let flesh_pcm = render(&mut flesh, 12_000);
+        assert_ne!(metal_pcm, wood_pcm);
+        assert_ne!(metal_pcm, flesh_pcm);
+        assert_ne!(wood_pcm, flesh_pcm);
+
+        let mut strike = WeaponImpactGenerator::new(base, 101).unwrap();
+        let mut clash = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::BladeClash,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        let mut block = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::Block,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        assert_ne!(render(&mut strike, 12_000), render(&mut clash, 12_000));
+        assert_ne!(render(&mut strike, 12_000), render(&mut block, 12_000));
+    }
+
+    #[test]
+    fn weapon_impact_seed_and_controls_are_repeatable_and_effective() {
+        let config = WeaponImpactConfig::default();
+        let mut first = WeaponImpactGenerator::new(config, 7).unwrap();
+        let mut same = WeaponImpactGenerator::new(config, 7).unwrap();
+        let mut other_seed = WeaponImpactGenerator::new(config, 8).unwrap();
+        let first_pcm = render(&mut first, 8_000);
+        assert_eq!(first_pcm, render(&mut same, 8_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 8_000));
+
+        let mut light = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                force: 0.1,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut heavy = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                force: 0.95,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(render(&mut light, 8_000), render(&mut heavy, 8_000));
+    }
+
+    #[test]
+    fn weapon_impact_rejects_invalid_configuration() {
+        assert!(matches!(
+            WeaponImpactGenerator::new(
+                WeaponImpactConfig {
+                    intensity: f32::NAN,
+                    ..WeaponImpactConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            WeaponImpactGenerator::new(
+                WeaponImpactConfig {
+                    sample_rate: 384_000,
+                    ..WeaponImpactConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        let mut impact =
+            WeaponImpactGenerator::new(WeaponImpactConfig::default(), 0).unwrap();
+        assert_eq!(
+            impact.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
 }
