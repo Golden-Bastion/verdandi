@@ -1,6 +1,6 @@
 # Procedural sound generation
 
-Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, footsteps, generic impacts, and weapon-contact sounds; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
+Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, footsteps, generic impacts, weapon-contact sounds, and material-specific breakage; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
 
 Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
 
@@ -55,6 +55,36 @@ fn make_sword_clash(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 
 Submit the resulting clip through the existing effects playback API. See [sound effects and ambience](sound-effects.md) for playback and ownership rules.
 
+
+## Generating material breakage
+
+Use \`BreakageGenerator\` for a one-shot fracture sound followed by a small, deterministic set of fragment events. \`BreakageMaterial\` provides wood, glass, stone, ceramic, and metal profiles. Size changes the duration, resonance, and fragment spread; force changes the fracture transient and overall energy; intensity controls output level.
+
+\`\`\`rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, BreakageConfig, BreakageGenerator, BreakageMaterial, ProceduralGenerator,
+};
+
+fn make_glass_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = BreakageConfig {
+        sample_rate: 48_000,
+        intensity: 0.9,
+        force: 0.85,
+        size: 0.65,
+        material: BreakageMaterial::Glass,
+    };
+    let mut generator = BreakageGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 9) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+\`\`\`
+
+Submit the resulting clip through the existing effects playback API. The generator prepares its fixed fragment events when it is constructed and does not allocate during rendering. Its profiles are stylized sound-design starting points, not physical fracture simulations; audition and tune them against playback before treating them as final assets.
+
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.
@@ -91,10 +121,11 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `FootstepGenerator` | Finite | intensity, brightness |
 | `ImpactGenerator` | Finite | intensity, resonance |
 | `WeaponImpactGenerator` | Finite | intensity, force, material, contact kind |
+| `BreakageGenerator` | Finite | intensity, force, size, material |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include shield and armor-specific contacts, character exertion and death sounds, blood-splatter effects, material-specific breakage, and debris. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include shield and armor-specific contacts, character exertion and death sounds, blood-splatter effects, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
 
 
 ## Application independence
