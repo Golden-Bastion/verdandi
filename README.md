@@ -10,7 +10,7 @@ Music is generated at runtime by default; no recorded music library is required.
 - Layered four-bar composition, seeded theme selection, automatic or manual intensity, and per-layer controls.
 - Runtime seed and preset changes, crossfades, transport pause/resume, gain controls, and synthesized stingers.
 - Optional SFZ parsing and sample playback, with procedural fallback for unmatched notes.
-- Deterministic procedural wind, rain, footsteps, impacts, material-shaped weapon contacts, including shields, projectile impacts, and material-specific breakage with debris, rendered into caller-owned PCM buffers; further game-audio families such as character actions, death sounds, and blood effects are planned.
+- Deterministic procedural wind, rain, footsteps, impacts, material-shaped weapon contacts, including shields, projectile impacts, and material-specific breakage with debris, and character jump/landing/fall sounds, rendered into caller-owned PCM buffers; vocal pain/exertion, death, blood effects, and further destruction are planned.
 - One-shot effects, persistent keyed loops, fades, independent music/effects/ambience buses, and voice limits.
 - Bounded decoded-PCM streaming for long effects and environmental audio.
 - An engine-independent core with an optional Bevy 0.20 integration.
@@ -46,7 +46,7 @@ For a custom audio host without Bevy:
 
 ~~~toml
 [dependencies]
-verdandi = { version = "0.6", default-features = false }
+verdandi = { version = "0.7", default-features = false }
 ~~~
 
 Start with the [documentation index](docs/README.md). It contains integration guides, full examples, the public API map, and the real-time/ownership contract. The symbol-level reference is available on [docs.rs](https://docs.rs/verdandi/latest/verdandi/).
