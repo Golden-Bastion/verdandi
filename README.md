@@ -23,7 +23,7 @@ The default feature enables the Bevy 0.20 plugin:
 
 ~~~toml
 [dependencies]
-verdandi = "0.6"
+verdandi = "0.7"
 ~~~
 
 ~~~rust
