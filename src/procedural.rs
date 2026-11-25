@@ -601,7 +601,6 @@ impl ProceduralGenerator for WeaponImpactGenerator {
     }
 }
 
-
 const BREAKAGE_FRAGMENTS: usize = 7;
 
 #[derive(Clone, Copy)]
@@ -733,13 +732,11 @@ impl BreakageGenerator {
         let total = (sample_rate * (0.30 + config.size * 0.60)) as u32;
         let mut rng = Rng::new(derive_seed(seed, 0x4252_4541, 0));
         let pitch_scale = (1.18 - config.size * 0.34) * (1.12 - config.force * 0.18);
-        let frequency_a = (body_frequency * pitch_scale * (0.94 + rng.next_f32() * 0.12))
-            .min(sample_rate * 0.40);
-        let frequency_b = (body_frequency
-            * overtone_ratio
-            * pitch_scale
-            * (0.94 + rng.next_f32() * 0.12))
-            .min(sample_rate * 0.40);
+        let frequency_a =
+            (body_frequency * pitch_scale * (0.94 + rng.next_f32() * 0.12)).min(sample_rate * 0.40);
+        let frequency_b =
+            (body_frequency * overtone_ratio * pitch_scale * (0.94 + rng.next_f32() * 0.12))
+                .min(sample_rate * 0.40);
         let ring_phase_a = rng.next_f32();
         let ring_phase_b = rng.next_f32();
 
@@ -747,10 +744,9 @@ impl BreakageGenerator {
         let fragment_duration = (sample_rate * (0.04 + config.size * 0.05)) as u32;
         let fragments = std::array::from_fn(|_| {
             let start_frame = (rng.next_f32() * fragment_window) as u32;
-            let frequency = (fragment_frequency + rng.next_f32() * fragment_spread)
-                .min(sample_rate * 0.40);
-            let amplitude = (0.035 + rng.next_f32() * 0.085)
-                * (0.45 + config.size * 0.60);
+            let frequency =
+                (fragment_frequency + rng.next_f32() * fragment_spread).min(sample_rate * 0.40);
+            let amplitude = (0.035 + rng.next_f32() * 0.085) * (0.45 + config.size * 0.60);
             let phase = rng.next_f32();
             let decay = fragment_decay * (0.85 + rng.next_f32() * 0.30);
             BreakageFragment {
@@ -800,9 +796,8 @@ impl ProceduralGenerator for BreakageGenerator {
             let elapsed = self.position as f32 / self.sample_rate;
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             self.noise_state += self.noise_coefficient * (noise - self.noise_state);
-            let crack = (noise - self.noise_state)
-                * (-elapsed * self.crack_decay).exp()
-                * self.crack_gain;
+            let crack =
+                (noise - self.noise_state) * (-elapsed * self.crack_decay).exp() * self.crack_gain;
             let ring = (self.ring_phase_a * TAU).sin() * (-elapsed * self.ring_decay).exp()
                 + (self.ring_phase_b * TAU).sin()
                     * (-elapsed * self.ring_decay * 1.42).exp()
@@ -812,9 +807,8 @@ impl ProceduralGenerator for BreakageGenerator {
                 .iter()
                 .map(|fragment| fragment.sample(self.position, self.sample_rate))
                 .sum();
-            let sample = (crack + ring * self.ring_gain * 0.42 + fragments)
-                * self.intensity
-                * force_gain;
+            let sample =
+                (crack + ring * self.ring_gain * 0.42 + fragments) * self.intensity * force_gain;
             let sample = sample.clamp(-1.0, 1.0);
             frame[0] = sample;
             frame[1] = sample;
@@ -1117,8 +1111,7 @@ mod tests {
         bounded(&expected);
         assert!(whole.is_finished());
 
-        let total_frames =
-            (config.sample_rate as f32 * (0.30 + config.size * 0.60)) as usize;
+        let total_frames = (config.sample_rate as f32 * (0.30 + config.size * 0.60)) as usize;
         assert!(expected[total_frames * 2..]
             .iter()
             .all(|sample| *sample == 0.0));
@@ -1170,33 +1163,12 @@ mod tests {
         let mut other_seed = BreakageGenerator::new(base, 92).unwrap();
         assert_ne!(wood_pcm, render(&mut other_seed, 16_000));
 
-        let mut small = BreakageGenerator::new(
-            BreakageConfig {
-                size: 0.15,
-                ..base
-            },
-            91,
-        )
-        .unwrap();
-        let mut large = BreakageGenerator::new(
-            BreakageConfig {
-                size: 0.95,
-                ..base
-            },
-            91,
-        )
-        .unwrap();
+        let mut small = BreakageGenerator::new(BreakageConfig { size: 0.15, ..base }, 91).unwrap();
+        let mut large = BreakageGenerator::new(BreakageConfig { size: 0.95, ..base }, 91).unwrap();
         assert_ne!(wood_pcm, render(&mut small, 16_000));
         assert_ne!(wood_pcm, render(&mut large, 16_000));
 
-        let mut light = BreakageGenerator::new(
-            BreakageConfig {
-                force: 0.1,
-                ..base
-            },
-            91,
-        )
-        .unwrap();
+        let mut light = BreakageGenerator::new(BreakageConfig { force: 0.1, ..base }, 91).unwrap();
         let mut heavy = BreakageGenerator::new(
             BreakageConfig {
                 force: 0.95,
@@ -1247,5 +1219,4 @@ mod tests {
             Err(ProceduralError::OutputMustContainStereoFrames)
         );
     }
-
 }
