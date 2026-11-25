@@ -1549,6 +1549,7 @@ mod tests {
         };
         let mut whole = CharacterActionGenerator::new(config, 0xCAFE).unwrap();
         let mut split = CharacterActionGenerator::new(config, 0xCAFE).unwrap();
+        assert!(!whole.is_finished());
         let expected = render(&mut whole, 40_000);
         let mut actual = render(&mut split, 17_321);
         actual.extend(render(&mut split, 22_679));
@@ -1583,12 +1584,22 @@ mod tests {
             17,
         )
         .unwrap();
+        assert!(!jump.is_finished() && !landing.is_finished() && !fall.is_finished());
         let jump_pcm = render(&mut jump, 40_000);
-        assert_ne!(
-            jump_pcm,
-            render(&mut landing, 40_000)
-        );
-        assert_ne!(jump_pcm, render(&mut fall, 40_000));
+        let landing_pcm = render(&mut landing, 40_000);
+        let fall_pcm = render(&mut fall, 40_000);
+        bounded(&jump_pcm);
+        bounded(&landing_pcm);
+        bounded(&fall_pcm);
+        assert!(jump.is_finished() && landing.is_finished() && fall.is_finished());
+        let jump_end = (base.sample_rate as f32 * 0.28) as usize * 2;
+        let landing_end = (base.sample_rate as f32 * 0.36) as usize * 2;
+        let fall_end = (base.sample_rate as f32 * 0.78) as usize * 2;
+        assert!(jump_pcm[jump_end..].iter().all(|sample| *sample == 0.0));
+        assert!(landing_pcm[landing_end..].iter().all(|sample| *sample == 0.0));
+        assert!(fall_pcm[fall_end..].iter().all(|sample| *sample == 0.0));
+        assert_ne!(jump_pcm, landing_pcm);
+        assert_ne!(jump_pcm, fall_pcm);
 
         let mut other_seed = CharacterActionGenerator::new(base, 18).unwrap();
         assert_ne!(jump_pcm, render(&mut other_seed, 40_000));
