@@ -55,7 +55,6 @@ fn make_sword_clash(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 
 Submit the resulting clip through the existing effects playback API. See [sound effects and ambience](sound-effects.md) for playback and ownership rules.
 
-
 ## Generating material breakage
 
 Use `BreakageGenerator` for a one-shot fracture sound followed by a small, deterministic set of fragment events. `BreakageMaterial` provides wood, glass, stone, ceramic, and metal profiles. Size changes the duration, resonance, and fragment spread; force changes the fracture transient and overall energy; intensity controls output level.
@@ -83,7 +82,6 @@ fn make_glass_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 ```
 
 Submit the resulting clip through the existing effects playback API. The generator prepares its fixed fragment events when it is constructed and does not allocate during rendering. Its profiles are stylized sound-design starting points, not physical fracture simulations; audition and tune them against playback before treating them as final assets.
-
 
 ## Generating continuous ambience
 
