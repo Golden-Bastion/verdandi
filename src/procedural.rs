@@ -535,6 +535,9 @@ impl WeaponImpactGenerator {
             .min(config.sample_rate as f32 * 0.40);
         let body_frequency =
             (body_frequency * (1.08 - config.force * 0.16)).min(config.sample_rate as f32 * 0.40);
+        let ring_phase_a = rng.next_f32();
+        let ring_phase_b = rng.next_f32();
+        let body_phase = rng.next_f32();
 
         Ok(Self {
             sample_rate: config.sample_rate as f32,
@@ -550,9 +553,9 @@ impl WeaponImpactGenerator {
             body_gain,
             ring_decay: material_decay * ring_decay_scale,
             transient_decay,
-            ring_phase_a: rng.next_f32(),
-            ring_phase_b: rng.next_f32(),
-            body_phase: rng.next_f32(),
+            ring_phase_a,
+            ring_phase_b,
+            body_phase,
             ring_step_a: frequency_a / config.sample_rate as f32,
             ring_step_b: frequency_b / config.sample_rate as f32,
             body_step: body_frequency / config.sample_rate as f32,
