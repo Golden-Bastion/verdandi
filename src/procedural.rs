@@ -601,6 +601,231 @@ impl ProceduralGenerator for WeaponImpactGenerator {
     }
 }
 
+const BREAKAGE_FRAGMENTS: usize = 7;
+
+#[derive(Clone, Copy)]
+struct BreakageFragment {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl BreakageFragment {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Material character for a procedural breakage sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BreakageMaterial {
+    /// Dry cracks and short, low-pitched splinter sounds.
+    Wood,
+    /// Bright, brittle fracture with many high-frequency shards.
+    Glass,
+    /// Dense fracture followed by gritty, low-mid frequency debris.
+    Stone,
+    /// Brittle, bright fracture with short ceramic fragments.
+    Ceramic,
+    /// Heavy fracture with a lower metallic body and ringing fragments.
+    Metal,
+}
+
+impl BreakageMaterial {
+    fn profile(self) -> (f32, f32, f32, f32, f32, f32, f32, f32) {
+        match self {
+            Self::Wood => (0.28, 52.0, 190.0, 1.43, 9.0, 320.0, 900.0, 17.0),
+            Self::Glass => (0.98, 76.0, 1_520.0, 1.62, 15.0, 1_900.0, 4_300.0, 25.0),
+            Self::Stone => (0.52, 42.0, 390.0, 1.27, 11.0, 460.0, 1_450.0, 21.0),
+            Self::Ceramic => (0.85, 68.0, 1_120.0, 1.74, 16.0, 1_550.0, 3_700.0, 26.0),
+            Self::Metal => (0.64, 31.0, 780.0, 0.72, 6.0, 720.0, 2_100.0, 14.0),
+        }
+    }
+}
+
+/// Configuration for one deterministic material-breakage sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BreakageConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Force of the break, 0.0..=1.0.
+    pub force: f32,
+    /// Approximate object scale, 0.0..=1.0. Larger values produce a longer, heavier break.
+    pub size: f32,
+    /// Material being fractured.
+    pub material: BreakageMaterial,
+}
+
+impl Default for BreakageConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.8,
+            force: 0.7,
+            size: 0.55,
+            material: BreakageMaterial::Wood,
+        }
+    }
+}
+
+/// Finite deterministic generator for material-specific breakage and debris.
+///
+/// The material selects a stylized fracture and fragment profile. Size affects duration,
+/// resonance, and fragment spread; force affects the transient and overall impact energy.
+/// Fragment events are prepared at construction and rendered from a fixed-size array, so
+/// rendering remains deterministic, bounded, and allocation-free. This is a sound-design
+/// generator, not a physical fracture simulation.
+pub struct BreakageGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    force: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    crack_gain: f32,
+    crack_decay: f32,
+    ring_gain: f32,
+    ring_decay: f32,
+    ring_phase_a: f32,
+    ring_phase_b: f32,
+    ring_step_a: f32,
+    ring_step_b: f32,
+    fragments: [BreakageFragment; BREAKAGE_FRAGMENTS],
+}
+
+impl BreakageGenerator {
+    /// Construct one deterministic breakage sound with an independent random stream.
+    pub fn new(config: BreakageConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.force)?;
+        validate_unit(config.size)?;
+
+        let (
+            crack_brightness,
+            crack_decay,
+            body_frequency,
+            overtone_ratio,
+            ring_decay,
+            fragment_frequency,
+            fragment_spread,
+            fragment_decay,
+        ) = config.material.profile();
+
+        let sample_rate = config.sample_rate as f32;
+        let total = (sample_rate * (0.30 + config.size * 0.60)) as u32;
+        let mut rng = Rng::new(derive_seed(seed, 0x4252_4541, 0));
+        let pitch_scale = (1.18 - config.size * 0.34) * (1.12 - config.force * 0.18);
+        let frequency_a =
+            (body_frequency * pitch_scale * (0.94 + rng.next_f32() * 0.12)).min(sample_rate * 0.40);
+        let frequency_b =
+            (body_frequency * overtone_ratio * pitch_scale * (0.94 + rng.next_f32() * 0.12))
+                .min(sample_rate * 0.40);
+        let ring_phase_a = rng.next_f32();
+        let ring_phase_b = rng.next_f32();
+
+        let fragment_window = total as f32 * (0.20 + config.size * 0.48);
+        let fragment_duration = (sample_rate * (0.04 + config.size * 0.05)) as u32;
+        let fragments: [BreakageFragment; BREAKAGE_FRAGMENTS] = std::array::from_fn(|_| {
+            let start_frame = (rng.next_f32() * fragment_window) as u32;
+            let frequency =
+                (fragment_frequency + rng.next_f32() * fragment_spread).min(sample_rate * 0.40);
+            let amplitude = (0.035 + rng.next_f32() * 0.085) * (0.45 + config.size * 0.60);
+            let phase = rng.next_f32();
+            let decay = fragment_decay * (0.85 + rng.next_f32() * 0.30);
+            BreakageFragment {
+                start_frame,
+                duration_frames: fragment_duration,
+                amplitude,
+                phase,
+                phase_step: frequency / sample_rate,
+                decay,
+            }
+        });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            force: config.force,
+            position: 0,
+            total,
+            rng,
+            noise_state: 0.0,
+            noise_coefficient: 0.02 + crack_brightness * 0.72,
+            crack_gain: 0.30 + crack_brightness * 0.42,
+            crack_decay,
+            ring_gain: 0.34 + config.size * 0.12,
+            ring_decay: ring_decay * (1.0 - config.size * 0.16),
+            ring_phase_a,
+            ring_phase_b,
+            ring_step_a: frequency_a / sample_rate,
+            ring_step_b: frequency_b / sample_rate,
+            fragments,
+        })
+    }
+}
+
+impl ProceduralGenerator for BreakageGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        let force_gain = 0.45 + self.force * 0.80;
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let crack =
+                (noise - self.noise_state) * (-elapsed * self.crack_decay).exp() * self.crack_gain;
+            let ring = (self.ring_phase_a * TAU).sin() * (-elapsed * self.ring_decay).exp()
+                + (self.ring_phase_b * TAU).sin()
+                    * (-elapsed * self.ring_decay * 1.42).exp()
+                    * 0.34;
+            let fragments: f32 = self
+                .fragments
+                .iter()
+                .map(|fragment| fragment.sample(self.position, self.sample_rate))
+                .sum();
+            let sample =
+                (crack + ring * self.ring_gain * 0.42 + fragments) * self.intensity * force_gain;
+            let sample = sample.clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.ring_phase_a = (self.ring_phase_a + self.ring_step_a).rem_euclid(1.0);
+            self.ring_phase_b = (self.ring_phase_b + self.ring_step_b).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -870,6 +1095,147 @@ mod tests {
         let mut impact = WeaponImpactGenerator::new(WeaponImpactConfig::default(), 0).unwrap();
         assert_eq!(
             impact.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+    #[test]
+    fn breakage_is_deterministic_across_blocks_and_ends_in_silence() {
+        let config = BreakageConfig::default();
+        let mut whole = BreakageGenerator::new(config, 0xBEEF).unwrap();
+        let mut split = BreakageGenerator::new(config, 0xBEEF).unwrap();
+        let expected = render(&mut whole, 35_000);
+        let mut actual = render(&mut split, 12_345);
+        actual.extend(render(&mut split, 22_655));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+
+        let total_frames = (config.sample_rate as f32 * (0.30 + config.size * 0.60)) as usize;
+        assert!(expected[total_frames * 2..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+    #[test]
+    fn breakage_materials_and_controls_change_the_sound() {
+        let base = BreakageConfig::default();
+        let mut wood = BreakageGenerator::new(base, 91).unwrap();
+        let mut glass = BreakageGenerator::new(
+            BreakageConfig {
+                material: BreakageMaterial::Glass,
+                ..base
+            },
+            91,
+        )
+        .unwrap();
+        let mut stone = BreakageGenerator::new(
+            BreakageConfig {
+                material: BreakageMaterial::Stone,
+                ..base
+            },
+            91,
+        )
+        .unwrap();
+        let mut ceramic = BreakageGenerator::new(
+            BreakageConfig {
+                material: BreakageMaterial::Ceramic,
+                ..base
+            },
+            91,
+        )
+        .unwrap();
+        let mut metal = BreakageGenerator::new(
+            BreakageConfig {
+                material: BreakageMaterial::Metal,
+                ..base
+            },
+            91,
+        )
+        .unwrap();
+        let wood_pcm = render(&mut wood, 16_000);
+        assert_ne!(wood_pcm, render(&mut glass, 16_000));
+        assert_ne!(wood_pcm, render(&mut stone, 16_000));
+        assert_ne!(wood_pcm, render(&mut ceramic, 16_000));
+        assert_ne!(wood_pcm, render(&mut metal, 16_000));
+
+        let mut other_seed = BreakageGenerator::new(base, 92).unwrap();
+        assert_ne!(wood_pcm, render(&mut other_seed, 16_000));
+
+        let mut small = BreakageGenerator::new(BreakageConfig { size: 0.15, ..base }, 91).unwrap();
+        let mut large = BreakageGenerator::new(BreakageConfig { size: 0.95, ..base }, 91).unwrap();
+        assert_ne!(wood_pcm, render(&mut small, 16_000));
+        assert_ne!(wood_pcm, render(&mut large, 16_000));
+
+        let mut light = BreakageGenerator::new(BreakageConfig { force: 0.1, ..base }, 91).unwrap();
+        let mut heavy = BreakageGenerator::new(
+            BreakageConfig {
+                force: 0.95,
+                ..base
+            },
+            91,
+        )
+        .unwrap();
+        assert_ne!(wood_pcm, render(&mut light, 16_000));
+        assert_ne!(wood_pcm, render(&mut heavy, 16_000));
+
+        let mut quiet = BreakageGenerator::new(
+            BreakageConfig {
+                intensity: 0.2,
+                ..base
+            },
+            91,
+        )
+        .unwrap();
+        assert_ne!(wood_pcm, render(&mut quiet, 16_000));
+    }
+
+    #[test]
+    fn breakage_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            BreakageGenerator::new(
+                BreakageConfig {
+                    sample_rate: 1_000,
+                    ..BreakageConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            BreakageGenerator::new(
+                BreakageConfig {
+                    size: f32::NAN,
+                    ..BreakageConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            BreakageGenerator::new(
+                BreakageConfig {
+                    intensity: f32::NAN,
+                    ..BreakageConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            BreakageGenerator::new(
+                BreakageConfig {
+                    force: 1.1,
+                    ..BreakageConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator = BreakageGenerator::new(BreakageConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
         );
     }
