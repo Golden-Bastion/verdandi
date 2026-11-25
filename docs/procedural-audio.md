@@ -58,9 +58,9 @@ Submit the resulting clip through the existing effects playback API. See [sound 
 
 ## Generating material breakage
 
-Use \`BreakageGenerator\` for a one-shot fracture sound followed by a small, deterministic set of fragment events. \`BreakageMaterial\` provides wood, glass, stone, ceramic, and metal profiles. Size changes the duration, resonance, and fragment spread; force changes the fracture transient and overall energy; intensity controls output level.
+Use `BreakageGenerator` for a one-shot fracture sound followed by a small, deterministic set of fragment events. `BreakageMaterial` provides wood, glass, stone, ceramic, and metal profiles. Size changes the duration, resonance, and fragment spread; force changes the fracture transient and overall energy; intensity controls output level.
 
-\`\`\`rust
+```rust
 use std::sync::Arc;
 use verdandi::prelude::{
     AudioClip, BreakageConfig, BreakageGenerator, BreakageMaterial, ProceduralGenerator,
@@ -80,7 +80,7 @@ fn make_glass_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
     generator.render(&mut pcm)?;
     Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
 }
-\`\`\`
+```
 
 Submit the resulting clip through the existing effects playback API. The generator prepares its fixed fragment events when it is constructed and does not allocate during rendering. Its profiles are stylized sound-design starting points, not physical fracture simulations; audition and tune them against playback before treating them as final assets.
 
