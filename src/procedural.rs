@@ -832,7 +832,6 @@ impl ProceduralGenerator for BreakageGenerator {
     }
 }
 
-
 const CHARACTER_ACTION_IMPACTS: usize = 3;
 
 #[derive(Clone, Copy)]
@@ -1014,8 +1013,7 @@ impl CharacterActionGenerator {
                     };
                 }
 
-                let progress =
-                    (index + 1) as f32 / (profile.secondary_impact_count + 1) as f32;
+                let progress = (index + 1) as f32 / (profile.secondary_impact_count + 1) as f32;
                 let jitter = (rng.next_f32() - 0.5) * 0.08;
                 let start_frame =
                     (total as f32 * (0.12 + progress * 0.72 + jitter)).max(0.0) as u32;
@@ -1075,9 +1073,8 @@ impl ProceduralGenerator for CharacterActionGenerator {
             let progress = self.position as f32 / self.total as f32;
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             self.noise_state += self.noise_coefficient * (noise - self.noise_state);
-            let movement = (noise - self.noise_state)
-                * (-elapsed * self.noise_decay).exp()
-                * self.noise_gain;
+            let movement =
+                (noise - self.noise_state) * (-elapsed * self.noise_decay).exp() * self.noise_gain;
             let attack = 1.0 - (-elapsed / self.body_attack).exp();
             let body_envelope = attack * (-elapsed * self.body_decay).exp();
             let body_frequency = self.body_start_frequency
@@ -1088,14 +1085,12 @@ impl ProceduralGenerator for CharacterActionGenerator {
                 .iter()
                 .map(|impact| impact.sample(self.position, self.sample_rate))
                 .sum();
-            let sample =
-                (movement + body + secondary) * self.intensity * force_gain;
+            let sample = (movement + body + secondary) * self.intensity * force_gain;
             let sample = sample.clamp(-1.0, 1.0);
             frame[0] = sample;
             frame[1] = sample;
 
-            self.body_phase =
-                (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
             self.position += 1;
         }
 
@@ -1596,7 +1591,9 @@ mod tests {
         let landing_end = (base.sample_rate as f32 * 0.36) as usize * 2;
         let fall_end = (base.sample_rate as f32 * 0.78) as usize * 2;
         assert!(jump_pcm[jump_end..].iter().all(|sample| *sample == 0.0));
-        assert!(landing_pcm[landing_end..].iter().all(|sample| *sample == 0.0));
+        assert!(landing_pcm[landing_end..]
+            .iter()
+            .all(|sample| *sample == 0.0));
         assert!(fall_pcm[fall_end..].iter().all(|sample| *sample == 0.0));
         assert_ne!(jump_pcm, landing_pcm);
         assert_ne!(jump_pcm, fall_pcm);
@@ -1604,14 +1601,9 @@ mod tests {
         let mut other_seed = CharacterActionGenerator::new(base, 18).unwrap();
         assert_ne!(jump_pcm, render(&mut other_seed, 40_000));
 
-        let mut light = CharacterActionGenerator::new(
-            CharacterActionConfig {
-                force: 0.1,
-                ..base
-            },
-            17,
-        )
-        .unwrap();
+        let mut light =
+            CharacterActionGenerator::new(CharacterActionConfig { force: 0.1, ..base }, 17)
+                .unwrap();
         let mut heavy = CharacterActionGenerator::new(
             CharacterActionConfig {
                 force: 0.95,
@@ -1702,5 +1694,4 @@ mod tests {
             Err(ProceduralError::OutputMustContainStereoFrames)
         );
     }
-
 }
