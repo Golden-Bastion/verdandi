@@ -734,6 +734,14 @@ mod tests {
             99,
         )
         .unwrap();
+        let mut stone = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Stone,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
         let mut flesh = WeaponImpactGenerator::new(
             WeaponImpactConfig {
                 material: ImpactMaterial::Flesh,
@@ -742,17 +750,36 @@ mod tests {
             99,
         )
         .unwrap();
+        let mut armor = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Armor,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
         let metal_pcm = render(&mut metal, 12_000);
         let wood_pcm = render(&mut wood, 12_000);
+        let stone_pcm = render(&mut stone, 12_000);
         let flesh_pcm = render(&mut flesh, 12_000);
+        let armor_pcm = render(&mut armor, 12_000);
         assert_ne!(metal_pcm, wood_pcm);
+        assert_ne!(metal_pcm, stone_pcm);
         assert_ne!(metal_pcm, flesh_pcm);
-        assert_ne!(wood_pcm, flesh_pcm);
+        assert_ne!(metal_pcm, armor_pcm);
 
         let mut strike = WeaponImpactGenerator::new(base, 101).unwrap();
         let mut clash = WeaponImpactGenerator::new(
             WeaponImpactConfig {
                 kind: WeaponImpactKind::BladeClash,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        let mut parry = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::Parry,
                 ..base
             },
             101,
@@ -767,6 +794,7 @@ mod tests {
         )
         .unwrap();
         assert_ne!(render(&mut strike, 12_000), render(&mut clash, 12_000));
+        assert_ne!(render(&mut strike, 12_000), render(&mut parry, 12_000));
         assert_ne!(render(&mut strike, 12_000), render(&mut block, 12_000));
     }
 
@@ -797,6 +825,24 @@ mod tests {
         )
         .unwrap();
         assert_ne!(render(&mut light, 8_000), render(&mut heavy, 8_000));
+
+        let mut quiet = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                intensity: 0.2,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut loud = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                intensity: 0.9,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 8_000), render(&mut loud, 8_000));
     }
 
     #[test]
