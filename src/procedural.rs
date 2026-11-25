@@ -742,7 +742,7 @@ impl BreakageGenerator {
 
         let fragment_window = total as f32 * (0.20 + config.size * 0.48);
         let fragment_duration = (sample_rate * (0.04 + config.size * 0.05)) as u32;
-        let fragments = std::array::from_fn(|_| {
+        let fragments: [BreakageFragment; BREAKAGE_FRAGMENTS] = std::array::from_fn(|_| {
             let start_frame = (rng.next_f32() * fragment_window) as u32;
             let frequency =
                 (fragment_frequency + rng.next_f32() * fragment_spread).min(sample_rate * 0.40);
@@ -1207,6 +1207,26 @@ mod tests {
             BreakageGenerator::new(
                 BreakageConfig {
                     size: f32::NAN,
+                    ..BreakageConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            BreakageGenerator::new(
+                BreakageConfig {
+                    intensity: f32::NAN,
+                    ..BreakageConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            BreakageGenerator::new(
+                BreakageConfig {
+                    force: 1.1,
                     ..BreakageConfig::default()
                 },
                 0
