@@ -405,6 +405,202 @@ impl ProceduralGenerator for ImpactGenerator {
     }
 }
 
+/// Material profile used to shape a procedural weapon impact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImpactMaterial {
+    /// Bright, sustained metallic resonance.
+    Metal,
+    /// Dull, woody knock with a short resonance.
+    Wood,
+    /// Dense, mid-frequency impact with a firm body.
+    Stone,
+    /// Soft, low-frequency impact with little ringing.
+    Flesh,
+    /// Heavy metallic impact with a restrained high-frequency ring.
+    Armor,
+}
+
+impl ImpactMaterial {
+    fn profile(self) -> (f32, f32, f32, f32, f32) {
+        match self {
+            Self::Metal => (1_850.0, 1.72, 4.2, 0.92, 260.0),
+            Self::Wood => (430.0, 2.08, 13.0, 0.28, 145.0),
+            Self::Stone => (760.0, 1.46, 8.0, 0.48, 195.0),
+            Self::Flesh => (165.0, 1.24, 22.0, 0.12, 105.0),
+            Self::Armor => (1_180.0, 1.83, 5.8, 0.72, 220.0),
+        }
+    }
+}
+
+/// Character of a weapon contact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WeaponImpactKind {
+    /// A weapon striking a target.
+    Strike,
+    /// Two blades or metal weapons colliding.
+    BladeClash,
+    /// A quick, deflecting contact.
+    Parry,
+    /// A weapon or shield absorbing a blow.
+    Block,
+}
+
+impl WeaponImpactKind {
+    fn profile(self) -> (f32, f32, f32, f32, f32, f32) {
+        match self {
+            Self::Strike => (0.42, 1.0, 0.78, 0.72, 1.0, 92.0),
+            Self::BladeClash => (0.58, 1.25, 1.18, 0.38, 0.68, 118.0),
+            Self::Parry => (0.34, 0.95, 1.32, 0.22, 0.82, 125.0),
+            Self::Block => (0.46, 0.82, 0.34, 1.15, 1.42, 76.0),
+        }
+    }
+}
+
+/// Configuration for one deterministic weapon-contact sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponImpactConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Relative contact force, 0.0..=1.0.
+    pub force: f32,
+    /// Material being struck or contacted.
+    pub material: ImpactMaterial,
+    /// Contact character.
+    pub kind: WeaponImpactKind,
+}
+
+impl Default for WeaponImpactConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.8,
+            force: 0.65,
+            material: ImpactMaterial::Metal,
+            kind: WeaponImpactKind::Strike,
+        }
+    }
+}
+
+/// Finite deterministic generator for weapon strikes, clashes, parries, and blocks.
+///
+/// The material and contact kind select a stylized resonant profile. The seed adds repeatable
+/// variation to the resonant frequencies and phases. This is a sound-design generator, not a
+/// physical collision simulation.
+pub struct WeaponImpactGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    force: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    transient_gain: f32,
+    ring_gain: f32,
+    body_gain: f32,
+    ring_decay: f32,
+    transient_decay: f32,
+    ring_phase_a: f32,
+    ring_phase_b: f32,
+    body_phase: f32,
+    ring_step_a: f32,
+    ring_step_b: f32,
+    body_step: f32,
+}
+
+impl WeaponImpactGenerator {
+    /// Construct one deterministic weapon-contact sound.
+    pub fn new(config: WeaponImpactConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.force)?;
+
+        let (base_frequency, overtone_ratio, material_decay, brightness, body_frequency) =
+            config.material.profile();
+        let (duration, transient_gain, ring_gain, body_gain, ring_decay_scale, transient_decay) =
+            config.kind.profile();
+        let mut rng = Rng::new(derive_seed(seed, 0x5745_4150, 0));
+        let force_pitch = 1.12 - config.force * 0.20;
+        let frequency_a = (base_frequency * force_pitch * (0.94 + rng.next_f32() * 0.12))
+            .min(config.sample_rate as f32 * 0.40);
+        let frequency_b =
+            (base_frequency * overtone_ratio * force_pitch * (0.94 + rng.next_f32() * 0.12))
+                .min(config.sample_rate as f32 * 0.40);
+        let body_frequency =
+            (body_frequency * (1.08 - config.force * 0.16)).min(config.sample_rate as f32 * 0.40);
+        let ring_phase_a = rng.next_f32();
+        let ring_phase_b = rng.next_f32();
+        let body_phase = rng.next_f32();
+
+        Ok(Self {
+            sample_rate: config.sample_rate as f32,
+            intensity: config.intensity,
+            force: config.force,
+            position: 0,
+            total: (config.sample_rate as f32 * duration) as u32,
+            rng,
+            noise_state: 0.0,
+            noise_coefficient: 0.025 + brightness * 0.68,
+            transient_gain,
+            ring_gain,
+            body_gain,
+            ring_decay: material_decay * ring_decay_scale,
+            transient_decay,
+            ring_phase_a,
+            ring_phase_b,
+            body_phase,
+            ring_step_a: frequency_a / config.sample_rate as f32,
+            ring_step_b: frequency_b / config.sample_rate as f32,
+            body_step: body_frequency / config.sample_rate as f32,
+        })
+    }
+}
+
+impl ProceduralGenerator for WeaponImpactGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        let force_gain = 0.55 + self.force * 0.65;
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let t = self.position as f32 / self.sample_rate;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let transient = (noise - self.noise_state)
+                * (-t * self.transient_decay).exp()
+                * self.transient_gain;
+            let ring = (self.ring_phase_a * TAU).sin() * (-t * self.ring_decay).exp()
+                + (self.ring_phase_b * TAU).sin() * (-t * self.ring_decay * 1.28).exp() * 0.42;
+            let body = (self.body_phase * TAU).sin() * (-t * (12.0 + self.ring_decay)).exp();
+
+            let sample = (transient + ring * self.ring_gain * 0.46 + body * self.body_gain * 0.34)
+                * self.intensity
+                * force_gain;
+            let sample = sample.clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.ring_phase_a = (self.ring_phase_a + self.ring_step_a).rem_euclid(1.0);
+            self.ring_phase_b = (self.ring_phase_b + self.ring_step_b).rem_euclid(1.0);
+            self.body_phase = (self.body_phase + self.body_step).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,5 +705,172 @@ mod tests {
         )
         .unwrap();
         assert_ne!(render(&mut quiet, 2048), render(&mut loud, 2048));
+    }
+
+    #[test]
+    fn weapon_impacts_are_deterministic_across_render_blocks() {
+        let config = WeaponImpactConfig::default();
+        let mut whole = WeaponImpactGenerator::new(config, 0x51A7).unwrap();
+        let mut split = WeaponImpactGenerator::new(config, 0x51A7).unwrap();
+        let expected = render(&mut whole, 20_000);
+        let mut actual = render(&mut split, 7_000);
+        actual.extend(render(&mut split, 13_000));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+        let end = (config.sample_rate as usize * 42 / 100) * 2;
+        assert!(expected[end..].iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn weapon_impact_materials_and_contact_kinds_change_the_sound() {
+        let base = WeaponImpactConfig::default();
+        let mut metal = WeaponImpactGenerator::new(base, 99).unwrap();
+        let mut wood = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Wood,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
+        let mut stone = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Stone,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
+        let mut flesh = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Flesh,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
+        let mut armor = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Armor,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
+        let metal_pcm = render(&mut metal, 12_000);
+        let wood_pcm = render(&mut wood, 12_000);
+        let stone_pcm = render(&mut stone, 12_000);
+        let flesh_pcm = render(&mut flesh, 12_000);
+        let armor_pcm = render(&mut armor, 12_000);
+        assert_ne!(metal_pcm, wood_pcm);
+        assert_ne!(metal_pcm, stone_pcm);
+        assert_ne!(metal_pcm, flesh_pcm);
+        assert_ne!(metal_pcm, armor_pcm);
+
+        let mut strike = WeaponImpactGenerator::new(base, 101).unwrap();
+        let mut clash = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::BladeClash,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        let mut parry = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::Parry,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        let mut block = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::Block,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        assert_ne!(render(&mut strike, 12_000), render(&mut clash, 12_000));
+        assert_ne!(render(&mut strike, 12_000), render(&mut parry, 12_000));
+        assert_ne!(render(&mut strike, 12_000), render(&mut block, 12_000));
+    }
+
+    #[test]
+    fn weapon_impact_seed_and_controls_are_repeatable_and_effective() {
+        let config = WeaponImpactConfig::default();
+        let mut first = WeaponImpactGenerator::new(config, 7).unwrap();
+        let mut same = WeaponImpactGenerator::new(config, 7).unwrap();
+        let mut other_seed = WeaponImpactGenerator::new(config, 8).unwrap();
+        let first_pcm = render(&mut first, 8_000);
+        assert_eq!(first_pcm, render(&mut same, 8_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 8_000));
+
+        let mut light = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                force: 0.1,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut heavy = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                force: 0.95,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(render(&mut light, 8_000), render(&mut heavy, 8_000));
+
+        let mut quiet = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                intensity: 0.2,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut loud = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                intensity: 0.9,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 8_000), render(&mut loud, 8_000));
+    }
+
+    #[test]
+    fn weapon_impact_rejects_invalid_configuration() {
+        assert!(matches!(
+            WeaponImpactGenerator::new(
+                WeaponImpactConfig {
+                    intensity: f32::NAN,
+                    ..WeaponImpactConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            WeaponImpactGenerator::new(
+                WeaponImpactConfig {
+                    sample_rate: 384_000,
+                    ..WeaponImpactConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        let mut impact = WeaponImpactGenerator::new(WeaponImpactConfig::default(), 0).unwrap();
+        assert_eq!(
+            impact.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
     }
 }

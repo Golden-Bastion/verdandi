@@ -10,7 +10,7 @@ Music is generated at runtime by default; no recorded music library is required.
 - Layered four-bar composition, seeded theme selection, automatic or manual intensity, and per-layer controls.
 - Runtime seed and preset changes, crossfades, transport pause/resume, gain controls, and synthesized stingers.
 - Optional SFZ parsing and sample playback, with procedural fallback for unmatched notes.
-- Deterministic procedural wind, rain, footsteps, and impacts, rendered into caller-owned PCM buffers; further game-audio families such as weapon clashes, material impacts, character actions, and destruction are planned.
+- Deterministic procedural wind, rain, footsteps, impacts, and material-shaped weapon strikes/clashes, rendered into caller-owned PCM buffers; further game-audio families such as character actions, death sounds, blood effects, and destruction are planned.
 - One-shot effects, persistent keyed loops, fades, independent music/effects/ambience buses, and voice limits.
 - Bounded decoded-PCM streaming for long effects and environmental audio.
 - An engine-independent core with an optional Bevy 0.20 integration.

@@ -31,8 +31,9 @@ pub mod prelude {
     };
     pub use crate::preset::{MusicPace, MusicPreset};
     pub use crate::procedural::{
-        FootstepConfig, FootstepGenerator, ImpactConfig, ImpactGenerator, ProceduralError,
-        ProceduralGenerator, RainConfig, RainGenerator, WindConfig, WindGenerator,
+        FootstepConfig, FootstepGenerator, ImpactConfig, ImpactGenerator, ImpactMaterial,
+        ProceduralError, ProceduralGenerator, RainConfig, RainGenerator, WeaponImpactConfig,
+        WeaponImpactGenerator, WeaponImpactKind, WindConfig, WindGenerator,
         MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
     };
     pub use crate::sfz::{
