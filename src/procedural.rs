@@ -418,6 +418,8 @@ pub enum ImpactMaterial {
     Flesh,
     /// Heavy metallic impact with a restrained high-frequency ring.
     Armor,
+    /// Resonant shield face with a firm body and a brighter rim response.
+    Shield,
 }
 
 impl ImpactMaterial {
@@ -428,6 +430,7 @@ impl ImpactMaterial {
             Self::Stone => (760.0, 1.46, 8.0, 0.48, 195.0),
             Self::Flesh => (165.0, 1.24, 22.0, 0.12, 105.0),
             Self::Armor => (1_180.0, 1.83, 5.8, 0.72, 220.0),
+            Self::Shield => (940.0, 2.12, 7.4, 0.54, 178.0),
         }
     }
 }
@@ -443,6 +446,8 @@ pub enum WeaponImpactKind {
     Parry,
     /// A weapon or shield absorbing a blow.
     Block,
+    /// A projectile striking a target.
+    ProjectileImpact,
 }
 
 impl WeaponImpactKind {
@@ -452,6 +457,7 @@ impl WeaponImpactKind {
             Self::BladeClash => (0.58, 1.25, 1.18, 0.38, 0.68, 118.0),
             Self::Parry => (0.34, 0.95, 1.32, 0.22, 0.82, 125.0),
             Self::Block => (0.46, 0.82, 0.34, 1.15, 1.42, 76.0),
+            Self::ProjectileImpact => (0.30, 1.12, 0.66, 0.58, 0.94, 145.0),
         }
     }
 }
@@ -465,7 +471,7 @@ pub struct WeaponImpactConfig {
     pub intensity: f32,
     /// Relative contact force, 0.0..=1.0.
     pub force: f32,
-    /// Material being struck or contacted.
+    /// Material being struck or contacted, including a shield profile.
     pub material: ImpactMaterial,
     /// Contact character.
     pub kind: WeaponImpactKind,
@@ -483,7 +489,7 @@ impl Default for WeaponImpactConfig {
     }
 }
 
-/// Finite deterministic generator for weapon strikes, clashes, parries, and blocks.
+/// Finite deterministic generator for weapon strikes, clashes, parries, blocks, and projectile impacts.
 ///
 /// The material and contact kind select a stylized resonant profile. The seed adds repeatable
 /// variation to the resonant frequencies and phases. This is a sound-design generator, not a
@@ -983,15 +989,26 @@ mod tests {
             99,
         )
         .unwrap();
+        let mut shield = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                material: ImpactMaterial::Shield,
+                ..base
+            },
+            99,
+        )
+        .unwrap();
         let metal_pcm = render(&mut metal, 12_000);
         let wood_pcm = render(&mut wood, 12_000);
         let stone_pcm = render(&mut stone, 12_000);
         let flesh_pcm = render(&mut flesh, 12_000);
         let armor_pcm = render(&mut armor, 12_000);
+        let shield_pcm = render(&mut shield, 12_000);
         assert_ne!(metal_pcm, wood_pcm);
         assert_ne!(metal_pcm, stone_pcm);
         assert_ne!(metal_pcm, flesh_pcm);
         assert_ne!(metal_pcm, armor_pcm);
+        assert_ne!(metal_pcm, shield_pcm);
+        assert_ne!(armor_pcm, shield_pcm);
 
         let mut strike = WeaponImpactGenerator::new(base, 101).unwrap();
         let mut clash = WeaponImpactGenerator::new(
@@ -1021,6 +1038,15 @@ mod tests {
         assert_ne!(render(&mut strike, 12_000), render(&mut clash, 12_000));
         assert_ne!(render(&mut strike, 12_000), render(&mut parry, 12_000));
         assert_ne!(render(&mut strike, 12_000), render(&mut block, 12_000));
+        let mut projectile = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                kind: WeaponImpactKind::ProjectileImpact,
+                ..base
+            },
+            101,
+        )
+        .unwrap();
+        assert_ne!(render(&mut strike, 12_000), render(&mut projectile, 12_000));
     }
 
     #[test]

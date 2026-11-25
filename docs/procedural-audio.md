@@ -26,7 +26,7 @@ Submit the resulting clip through the existing effects playback API. Keep the ow
 
 ## Generating a weapon impact
 
-Use `WeaponImpactGenerator` for a strike, blade clash, parry, or block. Its material profile shapes the transient and resonant body; force and intensity control the contact's weight and output level. The seed provides repeatable variation.
+Use `WeaponImpactGenerator` for a strike, blade clash, parry, block, or projectile impact. Its material profile shapes the transient and resonant body; force and intensity control the contact's weight and output level. The seed provides repeatable variation.
 
 ```rust
 use std::sync::Arc;
@@ -51,7 +51,24 @@ fn make_sword_clash(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 }
 ```
 
-`ImpactMaterial` currently provides metal, wood, stone, flesh, and armor profiles. `WeaponImpactKind` distinguishes strikes, blade clashes, parries, and blocks. These profiles are stylized starting points; tune them against actual playback before treating them as final sound assets.
+`ImpactMaterial` provides metal, wood, stone, flesh, armor, and a shield profile with a resonant face and brighter rim response. `WeaponImpactKind` distinguishes strikes, blade clashes, parries, blocks, and projectile impacts. These profiles are stylized starting points; tune them against actual playback before treating them as final sound assets.
+
+A shield block combines the shield material profile with the existing block contact shape:
+
+```rust
+use verdandi::prelude::{ImpactMaterial, WeaponImpactConfig, WeaponImpactGenerator, WeaponImpactKind};
+
+let config = WeaponImpactConfig {
+    material: ImpactMaterial::Shield,
+    kind: WeaponImpactKind::Block,
+    force: 0.9,
+    ..WeaponImpactConfig::default()
+};
+let seed = 0x51A7;
+let shield_block = WeaponImpactGenerator::new(config, seed)?;
+```
+
+To model a projectile hitting a surface, use `WeaponImpactKind::ProjectileImpact` and select the target material. The host remains responsible for choosing the correct material and force from its own gameplay state.
 
 Submit the resulting clip through the existing effects playback API. See [sound effects and ambience](sound-effects.md) for playback and ownership rules.
 
@@ -118,7 +135,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 |---|---|---|
 | `FootstepGenerator` | Finite | intensity, brightness |
 | `ImpactGenerator` | Finite | intensity, resonance |
-| `WeaponImpactGenerator` | Finite | intensity, force, material, contact kind |
+| `WeaponImpactGenerator` | Finite | intensity, force, material (including shield), contact kind (including projectile impact) |
 | `BreakageGenerator` | Finite | intensity, force, size, material |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
