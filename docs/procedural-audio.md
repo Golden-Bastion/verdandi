@@ -64,6 +64,7 @@ let config = WeaponImpactConfig {
     force: 0.9,
     ..WeaponImpactConfig::default()
 };
+let seed = 0x51A7;
 let shield_block = WeaponImpactGenerator::new(config, seed)?;
 ```
 
