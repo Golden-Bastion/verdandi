@@ -203,7 +203,8 @@ Status: **In progress**
 - [x] Document finite-clip and continuous-stream integration.
 - [ ] Audition generated sounds at representative sample rates and tune their acoustic character.
 - [x] Add material-specific breakage with deterministic, fixed-capacity fragment events and size/force/intensity controls.
-- [ ] Expand the generator toolkit with weapon handling, character actions and death sounds, blood-splatter effects, and further object destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
+- [x] Add deterministic character movement sounds for jumps, landings, and falls with force and body-weight controls.
+- [ ] Expand the generator toolkit with weapon handling, vocal pain/exertion and death sounds, blood-splatter effects, and further object destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
 
 **Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
 

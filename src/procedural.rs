@@ -832,6 +832,276 @@ impl ProceduralGenerator for BreakageGenerator {
     }
 }
 
+const CHARACTER_ACTION_IMPACTS: usize = 3;
+
+#[derive(Clone, Copy)]
+struct CharacterActionImpact {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl CharacterActionImpact {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Character movement event represented by a procedural one-shot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CharacterActionKind {
+    /// A brief, rising movement and effort sound as a character jumps.
+    Jump,
+    /// A weighted body impact and short follow-up movement when landing.
+    Landing,
+    /// A longer, uneven sequence of movement and secondary impacts during a fall.
+    Fall,
+}
+
+#[derive(Clone, Copy)]
+struct CharacterActionProfile {
+    duration: f32,
+    noise_decay: f32,
+    noise_gain: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    secondary_impact_count: usize,
+    secondary_impact_gain: f32,
+}
+
+impl CharacterActionKind {
+    fn profile(self) -> CharacterActionProfile {
+        match self {
+            Self::Jump => CharacterActionProfile {
+                duration: 0.28,
+                noise_decay: 34.0,
+                noise_gain: 0.62,
+                body_start_frequency: 118.0,
+                body_end_frequency: 208.0,
+                body_attack: 0.018,
+                body_decay: 13.0,
+                body_gain: 0.24,
+                secondary_impact_count: 0,
+                secondary_impact_gain: 0.0,
+            },
+            Self::Landing => CharacterActionProfile {
+                duration: 0.36,
+                noise_decay: 68.0,
+                noise_gain: 0.78,
+                body_start_frequency: 92.0,
+                body_end_frequency: 52.0,
+                body_attack: 0.002,
+                body_decay: 15.0,
+                body_gain: 0.82,
+                secondary_impact_count: 1,
+                secondary_impact_gain: 0.72,
+            },
+            Self::Fall => CharacterActionProfile {
+                duration: 0.78,
+                noise_decay: 18.0,
+                noise_gain: 0.58,
+                body_start_frequency: 76.0,
+                body_end_frequency: 40.0,
+                body_attack: 0.012,
+                body_decay: 5.5,
+                body_gain: 0.56,
+                secondary_impact_count: 3,
+                secondary_impact_gain: 0.58,
+            },
+        }
+    }
+}
+
+/// Configuration for one deterministic character movement sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharacterActionConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Relative action force, 0.0..=1.0.
+    pub force: f32,
+    /// Character body weight/scale, 0.0..=1.0.
+    pub weight: f32,
+    /// Movement event to render.
+    pub kind: CharacterActionKind,
+}
+
+impl Default for CharacterActionConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.75,
+            force: 0.6,
+            weight: 0.55,
+            kind: CharacterActionKind::Jump,
+        }
+    }
+}
+
+/// Finite deterministic generator for character jumps, landings, and falls.
+///
+/// These are stylized non-vocal movement sounds. A jump uses a short rising body tone and
+/// movement burst; a landing emphasizes a low body impact; a fall adds a longer movement
+/// texture and a fixed number of secondary impacts. The seed controls repeatable variation.
+/// This generator does not synthesize speech, breathing, or realistic human vocalizations.
+pub struct CharacterActionGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    force: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    noise_decay: f32,
+    noise_gain: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    impacts: [CharacterActionImpact; CHARACTER_ACTION_IMPACTS],
+}
+
+impl CharacterActionGenerator {
+    /// Construct one deterministic movement sound with an independent random stream.
+    pub fn new(config: CharacterActionConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.force)?;
+        validate_unit(config.weight)?;
+
+        let profile = config.kind.profile();
+        let sample_rate = config.sample_rate as f32;
+        let total = (sample_rate * profile.duration) as u32;
+        let mut rng = Rng::new(derive_seed(seed, 0x4348_4152, 0));
+        let weight_pitch = 1.24 - config.weight * 0.44;
+        let body_start_frequency =
+            (profile.body_start_frequency * weight_pitch).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (profile.body_end_frequency * weight_pitch).min(sample_rate * 0.40);
+        let body_phase = rng.next_f32();
+        let impact_duration = (sample_rate * (0.035 + config.weight * 0.025)) as u32;
+        let impact_frequency_scale = 1.45 - config.weight * 0.40;
+        let impacts: [CharacterActionImpact; CHARACTER_ACTION_IMPACTS] =
+            std::array::from_fn(|index| {
+                if index >= profile.secondary_impact_count {
+                    return CharacterActionImpact {
+                        start_frame: total,
+                        duration_frames: 0,
+                        amplitude: 0.0,
+                        phase: 0.0,
+                        phase_step: 0.0,
+                        decay: 1.0,
+                    };
+                }
+
+                let progress = (index + 1) as f32 / (profile.secondary_impact_count + 1) as f32;
+                let jitter = (rng.next_f32() - 0.5) * 0.08;
+                let start_frame =
+                    (total as f32 * (0.12 + progress * 0.72 + jitter)).max(0.0) as u32;
+                let frequency = (profile.body_start_frequency
+                    * impact_frequency_scale
+                    * (0.8 + rng.next_f32() * 0.7))
+                    .min(sample_rate * 0.40);
+                let amplitude = profile.secondary_impact_gain
+                    * (0.06 + config.force * 0.12)
+                    * (0.8 + rng.next_f32() * 0.4)
+                    * (0.7 + config.weight * 0.65);
+                CharacterActionImpact {
+                    start_frame,
+                    duration_frames: impact_duration,
+                    amplitude,
+                    phase: rng.next_f32(),
+                    phase_step: frequency / sample_rate,
+                    decay: 13.0 + rng.next_f32() * 7.0,
+                }
+            });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            force: config.force,
+            position: 0,
+            total,
+            rng,
+            noise_state: 0.0,
+            noise_coefficient: 0.035 + config.weight * 0.24,
+            noise_decay: profile.noise_decay,
+            noise_gain: profile.noise_gain,
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack: profile.body_attack,
+            body_decay: profile.body_decay,
+            body_gain: profile.body_gain * (0.82 + config.weight * 0.36),
+            impacts,
+        })
+    }
+}
+
+impl ProceduralGenerator for CharacterActionGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        let force_gain = 0.55 + self.force * 0.72;
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let movement =
+                (noise - self.noise_state) * (-elapsed * self.noise_decay).exp() * self.noise_gain;
+            let attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let secondary: f32 = self
+                .impacts
+                .iter()
+                .map(|impact| impact.sample(self.position, self.sample_rate))
+                .sum();
+            let sample = (movement + body + secondary) * self.intensity * force_gain;
+            let sample = sample.clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1260,6 +1530,165 @@ mod tests {
             Err(ProceduralError::InvalidParameter)
         ));
         let mut generator = BreakageGenerator::new(BreakageConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+    #[test]
+    fn character_actions_are_deterministic_across_blocks_and_finish_cleanly() {
+        let config = CharacterActionConfig {
+            kind: CharacterActionKind::Fall,
+            ..CharacterActionConfig::default()
+        };
+        let mut whole = CharacterActionGenerator::new(config, 0xCAFE).unwrap();
+        let mut split = CharacterActionGenerator::new(config, 0xCAFE).unwrap();
+        assert!(!whole.is_finished());
+        let expected = render(&mut whole, 40_000);
+        let mut actual = render(&mut split, 17_321);
+        actual.extend(render(&mut split, 22_679));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+
+        let total_frames = (config.sample_rate as f32 * 0.78) as usize;
+        assert!(expected[total_frames * 2..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+    #[test]
+    fn character_action_kinds_and_controls_change_the_sound() {
+        let base = CharacterActionConfig::default();
+        let mut jump = CharacterActionGenerator::new(base, 17).unwrap();
+        let mut landing = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                kind: CharacterActionKind::Landing,
+                ..base
+            },
+            17,
+        )
+        .unwrap();
+        let mut fall = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                kind: CharacterActionKind::Fall,
+                ..base
+            },
+            17,
+        )
+        .unwrap();
+        assert!(!jump.is_finished() && !landing.is_finished() && !fall.is_finished());
+        let jump_pcm = render(&mut jump, 40_000);
+        let landing_pcm = render(&mut landing, 40_000);
+        let fall_pcm = render(&mut fall, 40_000);
+        bounded(&jump_pcm);
+        bounded(&landing_pcm);
+        bounded(&fall_pcm);
+        assert!(jump.is_finished() && landing.is_finished() && fall.is_finished());
+        let jump_end = (base.sample_rate as f32 * 0.28) as usize * 2;
+        let landing_end = (base.sample_rate as f32 * 0.36) as usize * 2;
+        let fall_end = (base.sample_rate as f32 * 0.78) as usize * 2;
+        assert!(jump_pcm[jump_end..].iter().all(|sample| *sample == 0.0));
+        assert!(landing_pcm[landing_end..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        assert!(fall_pcm[fall_end..].iter().all(|sample| *sample == 0.0));
+        assert_ne!(jump_pcm, landing_pcm);
+        assert_ne!(jump_pcm, fall_pcm);
+
+        let mut other_seed = CharacterActionGenerator::new(base, 18).unwrap();
+        assert_ne!(jump_pcm, render(&mut other_seed, 40_000));
+
+        let mut light =
+            CharacterActionGenerator::new(CharacterActionConfig { force: 0.1, ..base }, 17)
+                .unwrap();
+        let mut heavy = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                force: 0.95,
+                ..base
+            },
+            17,
+        )
+        .unwrap();
+        assert_ne!(jump_pcm, render(&mut light, 40_000));
+        assert_ne!(jump_pcm, render(&mut heavy, 40_000));
+
+        let mut small = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                weight: 0.1,
+                ..base
+            },
+            17,
+        )
+        .unwrap();
+        let mut large = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                weight: 0.95,
+                ..base
+            },
+            17,
+        )
+        .unwrap();
+        assert_ne!(jump_pcm, render(&mut small, 40_000));
+        assert_ne!(jump_pcm, render(&mut large, 40_000));
+
+        let mut quiet = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                intensity: 0.2,
+                ..base
+            },
+            17,
+        )
+        .unwrap();
+        assert_ne!(jump_pcm, render(&mut quiet, 40_000));
+    }
+
+    #[test]
+    fn character_actions_reject_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            CharacterActionGenerator::new(
+                CharacterActionConfig {
+                    sample_rate: 1_000,
+                    ..CharacterActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            CharacterActionGenerator::new(
+                CharacterActionConfig {
+                    intensity: f32::NAN,
+                    ..CharacterActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            CharacterActionGenerator::new(
+                CharacterActionConfig {
+                    force: 1.1,
+                    ..CharacterActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            CharacterActionGenerator::new(
+                CharacterActionConfig {
+                    weight: -0.1,
+                    ..CharacterActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator =
+            CharacterActionGenerator::new(CharacterActionConfig::default(), 0).unwrap();
         assert_eq!(
             generator.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
