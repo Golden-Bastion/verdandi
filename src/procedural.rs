@@ -2008,8 +2008,14 @@ mod tests {
         )
         .unwrap();
         let draw_pcm = render(&mut draw, 40_000);
-        assert_ne!(draw_pcm, render(&mut sheathe, 40_000));
-        assert_ne!(draw_pcm, render(&mut reload, 40_000));
+        let sheathe_pcm = render(&mut sheathe, 40_000);
+        let reload_pcm = render(&mut reload, 40_000);
+        bounded(&draw_pcm);
+        bounded(&sheathe_pcm);
+        bounded(&reload_pcm);
+        assert!(draw.is_finished() && sheathe.is_finished() && reload.is_finished());
+        assert_ne!(draw_pcm, sheathe_pcm);
+        assert_ne!(draw_pcm, reload_pcm);
 
         let mut wood = WeaponHandlingGenerator::new(
             WeaponHandlingConfig {
@@ -2027,8 +2033,13 @@ mod tests {
             41,
         )
         .unwrap();
-        assert_ne!(draw_pcm, render(&mut wood, 40_000));
-        assert_ne!(draw_pcm, render(&mut leather, 40_000));
+        let wood_pcm = render(&mut wood, 40_000);
+        let leather_pcm = render(&mut leather, 40_000);
+        bounded(&wood_pcm);
+        bounded(&leather_pcm);
+        assert!(wood.is_finished() && leather.is_finished());
+        assert_ne!(draw_pcm, wood_pcm);
+        assert_ne!(draw_pcm, leather_pcm);
     }
 
     #[test]
@@ -2106,6 +2117,16 @@ mod tests {
             WeaponHandlingGenerator::new(
                 WeaponHandlingConfig {
                     weight: 1.1,
+                    ..WeaponHandlingConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    intensity: f32::NAN,
                     ..WeaponHandlingConfig::default()
                 },
                 0
