@@ -130,8 +130,8 @@ Submit the resulting clip through the existing effects playback API. The generat
 ## Generating non-vocal damage effects
 
 Use `DamageEffectGenerator` for three stylized, non-vocal damage textures:
-`DamageEffectKind::BloodSplatter`, `DamageEffectKind::BoneBreak`, and `DamageEffectKind::BluntTrauma`. `force` changes the
-event energy, `size` changes the duration, resonance, and spread of secondary contacts, and
+`DamageEffectKind::BloodSplatter`, `DamageEffectKind::BoneBreak`, and `DamageEffectKind::BluntTrauma`.
+`force` changes the event energy, `size` changes the duration, resonance, and spread of secondary contacts, and
 `intensity` controls the final level.
 
 ```rust
