@@ -206,6 +206,7 @@ Status: **In progress**
 - [x] Add material-specific breakage with deterministic, fixed-capacity fragment events and size/force/intensity controls.
 - [x] Add deterministic character movement sounds for jumps, landings, and falls with force and body-weight controls.
 - [x] Add deterministic weapon draw, sheathe, and reload handling sounds with material, weight, and speed controls.
+- [x] Add deterministic equipment movement sounds for cloth rustle, carried-gear jostle, and armor rattle with weight and activity controls.
 - [ ] Expand the generator toolkit with vocal pain/exertion, breathing and death sounds, blood-splatter effects, bone breaks, and further object destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
 
 **Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
