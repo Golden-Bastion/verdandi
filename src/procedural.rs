@@ -4228,6 +4228,30 @@ mod tests {
         )
         .unwrap();
         assert_ne!(render(&mut low_effort, 24_000), render(&mut high_effort, 24_000));
+
+        let mut light = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig { weight: 0.1, ..config },
+            12,
+        )
+        .unwrap();
+        let mut heavy = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig { weight: 0.95, ..config },
+            12,
+        )
+        .unwrap();
+        assert_ne!(render(&mut light, 24_000), render(&mut heavy, 24_000));
+
+        let mut quiet = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig { intensity: 0.2, ..config },
+            12,
+        )
+        .unwrap();
+        let mut loud = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig { intensity: 0.9, ..config },
+            12,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
     }
 
     #[test]
@@ -4374,6 +4398,30 @@ mod tests {
         )
         .unwrap();
         assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
+
+        let mut light = MechanicalActionGenerator::new(
+            MechanicalActionConfig { weight: 0.1, ..config },
+            3,
+        )
+        .unwrap();
+        let mut heavy = MechanicalActionGenerator::new(
+            MechanicalActionConfig { weight: 0.95, ..config },
+            3,
+        )
+        .unwrap();
+        assert_ne!(render(&mut light, 24_000), render(&mut heavy, 24_000));
+
+        let mut quiet = MechanicalActionGenerator::new(
+            MechanicalActionConfig { intensity: 0.2, ..config },
+            3,
+        )
+        .unwrap();
+        let mut loud = MechanicalActionGenerator::new(
+            MechanicalActionConfig { intensity: 0.9, ..config },
+            3,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
     }
 
     #[test]
