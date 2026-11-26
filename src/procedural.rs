@@ -2008,14 +2008,8 @@ mod tests {
         )
         .unwrap();
         let draw_pcm = render(&mut draw, 40_000);
-        assert_ne!(
-            draw_pcm,
-            render(&mut sheathe, 40_000)
-        );
-        assert_ne!(
-            draw_pcm,
-            render(&mut reload, 40_000)
-        );
+        assert_ne!(draw_pcm, render(&mut sheathe, 40_000));
+        assert_ne!(draw_pcm, render(&mut reload, 40_000));
 
         let mut wood = WeaponHandlingGenerator::new(
             WeaponHandlingConfig {
