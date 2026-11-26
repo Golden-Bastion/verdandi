@@ -2150,6 +2150,4 @@ mod tests {
             Err(ProceduralError::OutputMustContainStereoFrames)
         );
     }
-
-
 }
