@@ -1724,7 +1724,7 @@ impl EquipmentMovementGenerator {
             (profile.body_end_frequency * weight_pitch).min(sample_rate * 0.40);
 
         let stream_index = config.kind.stream_index();
-        let mut noise_rng = Rng::new(derive_seed(seed, 0x4551_4E4F, stream_index));
+        let noise_rng = Rng::new(derive_seed(seed, 0x4551_4E4F, stream_index));
         let mut phase_rng = Rng::new(derive_seed(seed, 0x4551_5048, stream_index));
         let mut event_rng = Rng::new(derive_seed(seed, 0x4551_4556, stream_index));
         let body_phase = phase_rng.next_f32();
