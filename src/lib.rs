@@ -35,6 +35,7 @@ pub mod prelude {
         CharacterActionGenerator, CharacterActionKind, FootstepConfig, FootstepGenerator,
         ImpactConfig, ImpactGenerator, ImpactMaterial, ProceduralError, ProceduralGenerator,
         RainConfig, RainGenerator, WeaponImpactConfig, WeaponImpactGenerator, WeaponImpactKind,
+        WeaponHandlingConfig, WeaponHandlingGenerator, WeaponHandlingKind, WeaponHandlingMaterial,
         WindConfig, WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
     };
     pub use crate::sfz::{
