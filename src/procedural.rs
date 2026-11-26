@@ -2465,6 +2465,360 @@ impl ProceduralGenerator for DamageEffectGenerator {
     }
 }
 
+
+const TOOL_ACTION_CONTACTS: usize = 4;
+
+#[derive(Clone, Copy)]
+struct ToolActionContact {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl ToolActionContact {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Target material for a procedural tool-action sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolActionMaterial {
+    /// Soft soil and loose earth with a low, muted response.
+    Earth,
+    /// Fibrous wood with a dry, woody resonance.
+    Wood,
+    /// Dense stone with a harder, brighter contact.
+    Stone,
+    /// Metal with a bright, ringing contact.
+    Metal,
+}
+
+impl ToolActionMaterial {
+    fn profile(self) -> (f32, f32, f32, f32, f32) {
+        match self {
+            Self::Earth => (145.0, 0.14, 0.72, 0.28, 1.35),
+            Self::Wood => (265.0, 0.28, 0.34, 0.74, 1.0),
+            Self::Stone => (520.0, 0.42, 0.25, 0.92, 0.82),
+            Self::Metal => (940.0, 0.22, 0.48, 0.68, 0.62),
+        }
+    }
+}
+
+/// Tool action represented by a finite procedural sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolActionKind {
+    /// A forceful cutting contact followed by a short follow-through.
+    Chop,
+    /// A gritty tool entry and withdrawal through loose material.
+    Dig,
+    /// A sustained friction pass across a hard or rough surface.
+    Scrape,
+    /// Repeated short friction strokes suggesting a hand saw.
+    Saw,
+}
+
+#[derive(Clone, Copy)]
+struct ToolActionProfile {
+    duration: f32,
+    friction_gain: f32,
+    friction_cycles: f32,
+    body_gain: f32,
+    body_attack: f32,
+    body_decay: f32,
+    contact_count: usize,
+    contact_gain: f32,
+    contact_duration: f32,
+    contact_decay: f32,
+    contact_positions: [f32; TOOL_ACTION_CONTACTS],
+}
+
+impl ToolActionKind {
+    fn profile(self) -> ToolActionProfile {
+        match self {
+            Self::Chop => ToolActionProfile {
+                duration: 0.48,
+                friction_gain: 0.13,
+                friction_cycles: 1.0,
+                body_gain: 0.30,
+                body_attack: 0.0008,
+                body_decay: 12.0,
+                contact_count: 2,
+                contact_gain: 0.42,
+                contact_duration: 0.034,
+                contact_decay: 30.0,
+                contact_positions: [0.035, 0.84, 0.0, 0.0],
+            },
+            Self::Dig => ToolActionProfile {
+                duration: 0.76,
+                friction_gain: 0.38,
+                friction_cycles: 3.0,
+                body_gain: 0.20,
+                body_attack: 0.004,
+                body_decay: 7.0,
+                contact_count: 3,
+                contact_gain: 0.20,
+                contact_duration: 0.030,
+                contact_decay: 26.0,
+                contact_positions: [0.16, 0.54, 0.88, 0.0],
+            },
+            Self::Scrape => ToolActionProfile {
+                duration: 0.62,
+                friction_gain: 0.68,
+                friction_cycles: 1.5,
+                body_gain: 0.12,
+                body_attack: 0.016,
+                body_decay: 5.5,
+                contact_count: 1,
+                contact_gain: 0.12,
+                contact_duration: 0.025,
+                contact_decay: 34.0,
+                contact_positions: [0.90, 0.0, 0.0, 0.0],
+            },
+            Self::Saw => ToolActionProfile {
+                duration: 0.84,
+                friction_gain: 0.72,
+                friction_cycles: 9.0,
+                body_gain: 0.10,
+                body_attack: 0.012,
+                body_decay: 4.8,
+                contact_count: 2,
+                contact_gain: 0.11,
+                contact_duration: 0.020,
+                contact_decay: 38.0,
+                contact_positions: [0.04, 0.94, 0.0, 0.0],
+            },
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::Chop => 0,
+            Self::Dig => 1,
+            Self::Scrape => 2,
+            Self::Saw => 3,
+        }
+    }
+}
+
+/// Configuration for one deterministic tool-action sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ToolActionConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Applied tool force, 0.0..=1.0.
+    pub force: f32,
+    /// Relative tool weight, 0.0..=1.0. Higher values lower the resonant body.
+    pub weight: f32,
+    /// Action speed, 0.0..=1.0. Higher values shorten the action and tighten repeated strokes.
+    pub speed: f32,
+    /// Material contacted by the tool.
+    pub material: ToolActionMaterial,
+    /// Tool action to render.
+    pub kind: ToolActionKind,
+}
+
+impl Default for ToolActionConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.78,
+            force: 0.7,
+            weight: 0.55,
+            speed: 0.55,
+            material: ToolActionMaterial::Wood,
+            kind: ToolActionKind::Chop,
+        }
+    }
+}
+
+/// Finite deterministic generator for chopping, digging, scraping, and sawing sounds.
+///
+/// Material shapes the resonance and friction texture. Force controls contact energy; weight
+/// shifts the resonant body, and speed changes duration and repeated-friction timing. Contacts
+/// are prepared at construction in a fixed-size array using a seed stream independent from the
+/// rendered noise. These profiles are stylized tool-use textures, not physical tool or material
+/// simulations; use host-provided recordings for distinctive tools or machinery.
+pub struct ToolActionGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    force_gain: f32,
+    position: u32,
+    total: u32,
+    noise_rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    low_noise_gain: f32,
+    high_noise_gain: f32,
+    friction_gain: f32,
+    friction_cycles: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    contacts: [ToolActionContact; TOOL_ACTION_CONTACTS],
+}
+
+impl ToolActionGenerator {
+    /// Construct one deterministic tool-action sound with independent random streams.
+    pub fn new(config: ToolActionConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.force)?;
+        validate_unit(config.weight)?;
+        validate_unit(config.speed)?;
+
+        let profile = config.kind.profile();
+        let (material_frequency, noise_coefficient, low_noise_gain, high_noise_gain, damping) =
+            config.material.profile();
+        let sample_rate = config.sample_rate as f32;
+        let duration_scale = (1.22 - config.speed * 0.42) * (1.04 - config.weight * 0.08);
+        let total = (sample_rate * profile.duration * duration_scale) as u32;
+        let weight_pitch = 1.24 - config.weight * 0.42;
+        let speed_pitch = 0.92 + config.speed * 0.14;
+        let body_start_frequency =
+            (material_frequency * weight_pitch * speed_pitch).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (body_start_frequency * (0.74 + config.speed * 0.18)).min(sample_rate * 0.40);
+        let stream_index = config.kind.stream_index();
+
+        let noise_rng = Rng::new(derive_seed(seed, 0x5441_4E4F, stream_index));
+        let mut phase_rng = Rng::new(derive_seed(seed, 0x5441_5048, stream_index));
+        let mut contact_rng = Rng::new(derive_seed(seed, 0x5441_434F, stream_index));
+        let body_phase = phase_rng.next_f32();
+        let force_gain = 0.42 + config.force * 0.88;
+
+        let contact_window = total as f32 * (0.78 + config.speed * 0.16);
+        let contact_duration =
+            (sample_rate * profile.contact_duration * (1.10 - config.speed * 0.20)) as u32;
+        let contacts: [ToolActionContact; TOOL_ACTION_CONTACTS] =
+            std::array::from_fn(|index| {
+                if index >= profile.contact_count {
+                    return ToolActionContact {
+                        start_frame: total,
+                        duration_frames: 0,
+                        amplitude: 0.0,
+                        phase: 0.0,
+                        phase_step: 0.0,
+                        decay: 1.0,
+                    };
+                }
+
+                let jitter = (contact_rng.next_f32() - 0.5) * 0.03;
+                let progress = (profile.contact_positions[index] + jitter).clamp(0.015, 0.98);
+                let start_frame = (contact_window * progress) as u32;
+                let frequency = (material_frequency
+                    * weight_pitch
+                    * (0.72 + contact_rng.next_f32() * 0.68))
+                    .min(sample_rate * 0.40);
+                let amplitude = profile.contact_gain
+                    * (0.70 + config.force * 0.60)
+                    * (0.76 + config.weight * 0.42)
+                    * (0.72 + contact_rng.next_f32() * 0.56);
+                ToolActionContact {
+                    start_frame,
+                    duration_frames: contact_duration,
+                    amplitude,
+                    phase: contact_rng.next_f32(),
+                    phase_step: frequency / sample_rate,
+                    decay: profile.contact_decay * damping
+                        * (0.80 + contact_rng.next_f32() * 0.40),
+                }
+            });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            force_gain,
+            position: 0,
+            total,
+            noise_rng,
+            noise_state: 0.0,
+            noise_coefficient,
+            low_noise_gain,
+            high_noise_gain,
+            friction_gain: profile.friction_gain * (0.78 + config.force * 0.46),
+            friction_cycles: profile.friction_cycles * (0.72 + config.speed * 0.56),
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack: profile.body_attack,
+            body_decay: profile.body_decay * damping,
+            body_gain: profile.body_gain * (0.78 + config.weight * 0.42),
+            contacts,
+        })
+    }
+}
+
+impl ProceduralGenerator for ToolActionGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let high_noise = noise - self.noise_state;
+            let action_envelope = (TAU * progress * 0.5).sin();
+            let stroke_phase = progress * self.friction_cycles;
+            let stroke_envelope = 0.48 + 0.52 * (TAU * stroke_phase).sin().abs();
+            let friction = (self.noise_state * self.low_noise_gain
+                + high_noise * self.high_noise_gain)
+                * self.friction_gain
+                * action_envelope
+                * stroke_envelope;
+
+            let attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let contacts: f32 = self
+                .contacts
+                .iter()
+                .map(|contact| contact.sample(self.position, self.sample_rate))
+                .sum();
+
+            let sample =
+                ((friction + body + contacts) * self.intensity * self.force_gain).clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2828,6 +3182,199 @@ mod tests {
             Err(ProceduralError::InvalidParameter)
         ));
         let mut generator = DamageEffectGenerator::new(DamageEffectConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+
+    #[test]
+    fn tool_actions_are_deterministic_across_blocks_and_finish_cleanly() {
+        let config = ToolActionConfig {
+            kind: ToolActionKind::Saw,
+            ..ToolActionConfig::default()
+        };
+        let mut whole = ToolActionGenerator::new(config, 0x7001).unwrap();
+        let mut split = ToolActionGenerator::new(config, 0x7001).unwrap();
+        let expected = render(&mut whole, 48_000);
+        let mut actual = render(&mut split, 337);
+        actual.extend(render(&mut split, 8_192));
+        actual.extend(render(&mut split, 39_471));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+        assert!(whole.is_finished());
+        assert!(split.is_finished());
+        let silence = render(&mut split, 128);
+        assert!(silence.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn tool_action_kinds_and_materials_have_distinct_bounded_profiles() {
+        let base = ToolActionConfig::default();
+        let kinds = [
+            ToolActionKind::Chop,
+            ToolActionKind::Dig,
+            ToolActionKind::Scrape,
+            ToolActionKind::Saw,
+        ];
+        let kind_outputs: Vec<Vec<f32>> = kinds
+            .into_iter()
+            .map(|kind| {
+                let mut generator =
+                    ToolActionGenerator::new(ToolActionConfig { kind, ..base }, 111).unwrap();
+                let samples = render(&mut generator, 48_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        for output in kind_outputs.iter().skip(1) {
+            assert_ne!(&kind_outputs[0], output);
+        }
+
+        let materials = [
+            ToolActionMaterial::Earth,
+            ToolActionMaterial::Wood,
+            ToolActionMaterial::Stone,
+            ToolActionMaterial::Metal,
+        ];
+        let material_outputs: Vec<Vec<f32>> = materials
+            .into_iter()
+            .map(|material| {
+                let mut generator = ToolActionGenerator::new(
+                    ToolActionConfig {
+                        kind: ToolActionKind::Chop,
+                        material,
+                        ..base
+                    },
+                    112,
+                )
+                .unwrap();
+                let samples = render(&mut generator, 48_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        for output in material_outputs.iter().skip(1) {
+            assert_ne!(&material_outputs[0], output);
+        }
+    }
+
+    #[test]
+    fn tool_action_seed_and_controls_are_effective() {
+        let config = ToolActionConfig::default();
+        let mut first = ToolActionGenerator::new(config, 23).unwrap();
+        let mut same = ToolActionGenerator::new(config, 23).unwrap();
+        let mut other_seed = ToolActionGenerator::new(config, 24).unwrap();
+        let first_pcm = render(&mut first, 24_000);
+        assert_eq!(first_pcm, render(&mut same, 24_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 24_000));
+
+        let mut low_force = ToolActionGenerator::new(
+            ToolActionConfig { force: 0.1, ..config },
+            23,
+        )
+        .unwrap();
+        let mut high_force = ToolActionGenerator::new(
+            ToolActionConfig { force: 0.95, ..config },
+            23,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut low_force, 24_000));
+        assert_ne!(first_pcm, render(&mut high_force, 24_000));
+
+        let mut low_weight = ToolActionGenerator::new(
+            ToolActionConfig { weight: 0.1, ..config },
+            23,
+        )
+        .unwrap();
+        let mut high_weight = ToolActionGenerator::new(
+            ToolActionConfig { weight: 0.95, ..config },
+            23,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut low_weight, 24_000));
+        assert_ne!(first_pcm, render(&mut high_weight, 24_000));
+
+        let mut slow = ToolActionGenerator::new(
+            ToolActionConfig { speed: 0.1, ..config },
+            23,
+        )
+        .unwrap();
+        let mut fast = ToolActionGenerator::new(
+            ToolActionConfig { speed: 0.95, ..config },
+            23,
+        )
+        .unwrap();
+        assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
+
+        let mut quiet = ToolActionGenerator::new(
+            ToolActionConfig { intensity: 0.2, ..config },
+            23,
+        )
+        .unwrap();
+        let mut loud = ToolActionGenerator::new(
+            ToolActionConfig { intensity: 0.9, ..config },
+            23,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
+    }
+
+    #[test]
+    fn tool_action_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            ToolActionGenerator::new(
+                ToolActionConfig {
+                    sample_rate: 1_000,
+                    ..ToolActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            ToolActionGenerator::new(
+                ToolActionConfig {
+                    intensity: f32::NAN,
+                    ..ToolActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            ToolActionGenerator::new(
+                ToolActionConfig {
+                    force: 1.1,
+                    ..ToolActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            ToolActionGenerator::new(
+                ToolActionConfig {
+                    weight: f32::INFINITY,
+                    ..ToolActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            ToolActionGenerator::new(
+                ToolActionConfig {
+                    speed: -0.1,
+                    ..ToolActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator = ToolActionGenerator::new(ToolActionConfig::default(), 0).unwrap();
         assert_eq!(
             generator.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
