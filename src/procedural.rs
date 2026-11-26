@@ -2465,7 +2465,6 @@ impl ProceduralGenerator for DamageEffectGenerator {
     }
 }
 
-
 const TOOL_ACTION_CONTACTS: usize = 4;
 
 #[derive(Clone, Copy)]
@@ -2707,40 +2706,37 @@ impl ToolActionGenerator {
         let contact_window = total as f32 * (0.78 + config.speed * 0.16);
         let contact_duration =
             (sample_rate * profile.contact_duration * (1.10 - config.speed * 0.20)) as u32;
-        let contacts: [ToolActionContact; TOOL_ACTION_CONTACTS] =
-            std::array::from_fn(|index| {
-                if index >= profile.contact_count {
-                    return ToolActionContact {
-                        start_frame: total,
-                        duration_frames: 0,
-                        amplitude: 0.0,
-                        phase: 0.0,
-                        phase_step: 0.0,
-                        decay: 1.0,
-                    };
-                }
+        let contacts: [ToolActionContact; TOOL_ACTION_CONTACTS] = std::array::from_fn(|index| {
+            if index >= profile.contact_count {
+                return ToolActionContact {
+                    start_frame: total,
+                    duration_frames: 0,
+                    amplitude: 0.0,
+                    phase: 0.0,
+                    phase_step: 0.0,
+                    decay: 1.0,
+                };
+            }
 
-                let jitter = (contact_rng.next_f32() - 0.5) * 0.03;
-                let progress = (profile.contact_positions[index] + jitter).clamp(0.015, 0.98);
-                let start_frame = (contact_window * progress) as u32;
-                let frequency = (material_frequency
-                    * weight_pitch
-                    * (0.72 + contact_rng.next_f32() * 0.68))
+            let jitter = (contact_rng.next_f32() - 0.5) * 0.03;
+            let progress = (profile.contact_positions[index] + jitter).clamp(0.015, 0.98);
+            let start_frame = (contact_window * progress) as u32;
+            let frequency =
+                (material_frequency * weight_pitch * (0.72 + contact_rng.next_f32() * 0.68))
                     .min(sample_rate * 0.40);
-                let amplitude = profile.contact_gain
-                    * (0.70 + config.force * 0.60)
-                    * (0.76 + config.weight * 0.42)
-                    * (0.72 + contact_rng.next_f32() * 0.56);
-                ToolActionContact {
-                    start_frame,
-                    duration_frames: contact_duration,
-                    amplitude,
-                    phase: contact_rng.next_f32(),
-                    phase_step: frequency / sample_rate,
-                    decay: profile.contact_decay * damping
-                        * (0.80 + contact_rng.next_f32() * 0.40),
-                }
-            });
+            let amplitude = profile.contact_gain
+                * (0.70 + config.force * 0.60)
+                * (0.76 + config.weight * 0.42)
+                * (0.72 + contact_rng.next_f32() * 0.56);
+            ToolActionContact {
+                start_frame,
+                duration_frames: contact_duration,
+                amplitude,
+                phase: contact_rng.next_f32(),
+                phase_step: frequency / sample_rate,
+                decay: profile.contact_decay * damping * (0.80 + contact_rng.next_f32() * 0.40),
+            }
+        });
 
         Ok(Self {
             sample_rate,
@@ -3188,7 +3184,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn tool_actions_are_deterministic_across_blocks_and_finish_cleanly() {
         let config = ToolActionConfig {
@@ -3272,12 +3267,18 @@ mod tests {
         assert_ne!(first_pcm, render(&mut other_seed, 24_000));
 
         let mut low_force = ToolActionGenerator::new(
-            ToolActionConfig { force: 0.1, ..config },
+            ToolActionConfig {
+                force: 0.1,
+                ..config
+            },
             23,
         )
         .unwrap();
         let mut high_force = ToolActionGenerator::new(
-            ToolActionConfig { force: 0.95, ..config },
+            ToolActionConfig {
+                force: 0.95,
+                ..config
+            },
             23,
         )
         .unwrap();
@@ -3285,12 +3286,18 @@ mod tests {
         assert_ne!(first_pcm, render(&mut high_force, 24_000));
 
         let mut low_weight = ToolActionGenerator::new(
-            ToolActionConfig { weight: 0.1, ..config },
+            ToolActionConfig {
+                weight: 0.1,
+                ..config
+            },
             23,
         )
         .unwrap();
         let mut high_weight = ToolActionGenerator::new(
-            ToolActionConfig { weight: 0.95, ..config },
+            ToolActionConfig {
+                weight: 0.95,
+                ..config
+            },
             23,
         )
         .unwrap();
@@ -3298,24 +3305,36 @@ mod tests {
         assert_ne!(first_pcm, render(&mut high_weight, 24_000));
 
         let mut slow = ToolActionGenerator::new(
-            ToolActionConfig { speed: 0.1, ..config },
+            ToolActionConfig {
+                speed: 0.1,
+                ..config
+            },
             23,
         )
         .unwrap();
         let mut fast = ToolActionGenerator::new(
-            ToolActionConfig { speed: 0.95, ..config },
+            ToolActionConfig {
+                speed: 0.95,
+                ..config
+            },
             23,
         )
         .unwrap();
         assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
 
         let mut quiet = ToolActionGenerator::new(
-            ToolActionConfig { intensity: 0.2, ..config },
+            ToolActionConfig {
+                intensity: 0.2,
+                ..config
+            },
             23,
         )
         .unwrap();
         let mut loud = ToolActionGenerator::new(
-            ToolActionConfig { intensity: 0.9, ..config },
+            ToolActionConfig {
+                intensity: 0.9,
+                ..config
+            },
             23,
         )
         .unwrap();
