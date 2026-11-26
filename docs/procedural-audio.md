@@ -129,8 +129,8 @@ Submit the resulting clip through the existing effects playback API. The generat
 
 ## Generating non-vocal damage effects
 
-Use `DamageEffectGenerator` for two stylized, non-vocal damage textures:
-`DamageEffectKind::BloodSplatter` and `DamageEffectKind::BoneBreak`. `force` changes the
+Use `DamageEffectGenerator` for three stylized, non-vocal damage textures:
+`DamageEffectKind::BloodSplatter`, `DamageEffectKind::BoneBreak`, and `DamageEffectKind::BluntTrauma`. `force` changes the
 event energy, `size` changes the duration, resonance, and spread of secondary contacts, and
 `intensity` controls the final level.
 
@@ -158,10 +158,11 @@ fn make_bone_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Erro
 
 The splatter profile combines a wet broadband texture with a fixed sequence of small droplet-like
 contacts. The bone-break profile uses a sharper fracture transient and shorter secondary cracks.
-These are intentionally stylized effect layers, not anatomical simulations. They do not include
-speech, pain cries, breathing, or death vocalizations; use host-provided or sampled performances
-when a recognizable character voice is required. Prepare the PCM outside the playback callback
-and submit it through the existing effects path.
+The blunt-trauma profile emphasizes a low body thump with a short dull crack. These are stylized
+effect layers, not anatomical simulations. For nonverbal voice fallback, use the
+`CharacterVocalizationGenerator` described below; prefer supplied recordings when a recognizable
+character performance is available. Prepare the PCM outside the playback callback and submit it
+through the existing effects path.
 
 
 ## Generating synthetic character vocalizations
