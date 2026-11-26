@@ -1,6 +1,6 @@
 # Procedural sound generation
 
-Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, footsteps, generic impacts, weapon-contact sounds, material-specific breakage, non-vocal character movement effects, and weapon draw/sheathe/reload handling; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
+Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, generic and surface-specific footsteps, generic impacts, weapon-contact sounds, material-specific breakage, non-vocal character movement effects, and weapon draw/sheathe/reload handling; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
 
 Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
 
@@ -23,6 +23,31 @@ fn make_footstep(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>
 ```
 
 Submit the resulting clip through the existing effects playback API. Keep the owning `Arc<AudioClip>` in the host's asset catalogue while it may be queued or playing. See [sound effects and ambience](sound-effects.md) for playback and ownership rules.
+
+
+### Choosing a footstep surface
+
+The original `FootstepGenerator::new` constructor remains material-neutral and retains its existing sound profile. When the host knows the ground material, use `FootstepGenerator::new_for_surface` with one of the built-in `FootstepSurface` profiles: dirt, grass, gravel, wood, stone, metal, shallow water, or snow. The same intensity and brightness controls apply; brightness adjusts the high-frequency texture. The surface affects body resonance, friction, and the contact transient.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, FootstepConfig, FootstepGenerator, FootstepSurface, ProceduralGenerator,
+};
+
+fn make_gravel_footstep(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = FootstepConfig::default();
+    let mut generator =
+        FootstepGenerator::new_for_surface(config, FootstepSurface::Gravel, seed)?;
+    let frames = (config.sample_rate as usize * 22) / 100;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+Surface profiles are stylized sound-design starting points, not recordings or physical contact simulations. The host decides which surface applies, and may continue using recorded footsteps for distinctive footwear, movement styles, or highly realistic material detail.
+
 
 ## Generating a weapon impact
 
@@ -194,7 +219,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 
 | Generator | Type | Main controls |
 |---|---|---|
-| `FootstepGenerator` | Finite | intensity, brightness |
+| `FootstepGenerator` | Finite | intensity, brightness, optional surface profile |
 | `ImpactGenerator` | Finite | intensity, resonance |
 | `WeaponImpactGenerator` | Finite | intensity, force, material (including shield), contact kind (including projectile impact) |
 | `BreakageGenerator` | Finite | intensity, force, size, material |

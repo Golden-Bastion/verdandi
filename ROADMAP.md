@@ -196,6 +196,7 @@ Status: **In progress**
 - [x] Add a dedicated engine-independent procedural sound module with caller-buffer stereo rendering.
 - [x] Add deterministic wind and rain ambience generators.
 - [x] Add deterministic one-shot footstep and generic impact generators.
+- [x] Add surface-specific footstep profiles for dirt, grass, gravel, wood, stone, metal, shallow water, and snow while preserving the generic footstep constructor.
 - [x] Add weapon-contact generation for strikes, blade clashes, parries, and blocks with material, force, and intensity controls.
 - [x] Add a shield material profile and projectile-impact kind to the weapon-contact generator.
 - [x] Validate sample rates, normalized parameters, and stereo buffer shape.

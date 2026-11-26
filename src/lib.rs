@@ -33,11 +33,11 @@ pub mod prelude {
     pub use crate::procedural::{
         BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
         CharacterActionGenerator, CharacterActionKind, FootstepConfig, FootstepGenerator,
-        ImpactConfig, ImpactGenerator, ImpactMaterial, ProceduralError, ProceduralGenerator,
-        RainConfig, RainGenerator, WeaponHandlingConfig, WeaponHandlingGenerator,
-        WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactGenerator,
-        WeaponImpactKind, WindConfig, WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE,
-        MIN_PROCEDURAL_SAMPLE_RATE,
+        FootstepSurface, ImpactConfig, ImpactGenerator, ImpactMaterial, ProceduralError,
+        ProceduralGenerator, RainConfig, RainGenerator, WeaponHandlingConfig,
+        WeaponHandlingGenerator, WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig,
+        WeaponImpactGenerator, WeaponImpactKind, WindConfig, WindGenerator,
+        MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
     };
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
