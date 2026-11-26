@@ -2303,6 +2303,7 @@ impl DamageEffectKind {
         match self {
             Self::BloodSplatter => 0,
             Self::BoneBreak => 1,
+            Self::BluntTrauma => 2,
         }
     }
 }
@@ -2334,9 +2335,9 @@ impl Default for DamageEffectConfig {
     }
 }
 
-/// Finite deterministic generator for stylized blood-splatter and bone-break effects.
+/// Finite deterministic generator for stylized blood-splatter, bone-break, and blunt-trauma effects.
 ///
-/// The two profiles share a bounded one-shot renderer but use different noise, resonance, and
+/// The profiles share a bounded one-shot renderer but use different noise, resonance, and
 /// contact-event balances. Force controls event energy; size changes duration, resonance, and
 /// event spread. Seeded events are prepared at construction in fixed-capacity storage, with
 /// independent streams for noise, phase, and secondary contacts. These are non-vocal sound-design
