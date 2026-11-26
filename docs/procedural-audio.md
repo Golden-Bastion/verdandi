@@ -126,6 +126,43 @@ fn make_glass_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 Submit the resulting clip through the existing effects playback API. The generator prepares its fixed fragment events when it is constructed and does not allocate during rendering. Its profiles are stylized sound-design starting points, not physical fracture simulations; audition and tune them against playback before treating them as final assets.
 
 
+
+## Generating non-vocal damage effects
+
+Use `DamageEffectGenerator` for two stylized, non-vocal damage textures:
+`DamageEffectKind::BloodSplatter` and `DamageEffectKind::BoneBreak`. `force` changes the
+event energy, `size` changes the duration, resonance, and spread of secondary contacts, and
+`intensity` controls the final level.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, DamageEffectConfig, DamageEffectGenerator, DamageEffectKind, ProceduralGenerator,
+};
+
+fn make_bone_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = DamageEffectConfig {
+        sample_rate: 48_000,
+        intensity: 0.75,
+        force: 0.85,
+        size: 0.55,
+        kind: DamageEffectKind::BoneBreak,
+    };
+    let mut generator = DamageEffectGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 7) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+The splatter profile combines a wet broadband texture with a fixed sequence of small droplet-like
+contacts. The bone-break profile uses a sharper fracture transient and shorter secondary cracks.
+These are intentionally stylized effect layers, not anatomical simulations. They do not include
+speech, pain cries, breathing, or death vocalizations; use host-provided or sampled performances
+when a recognizable character voice is required. Prepare the PCM outside the playback callback
+and submit it through the existing effects path.
+
 ## Generating character movement sounds
 
 Use `CharacterActionGenerator` for non-vocal character movement effects: jumps, landings, and falls. `force` controls the action's strength, while `weight` shifts the body resonance and secondary impacts toward a heavier or lighter character. The seed provides repeatable variation. This generator does not synthesize speech, breathing, or realistic vocalizations.
@@ -293,6 +330,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `ImpactGenerator` | Finite | intensity, resonance |
 | `WeaponImpactGenerator` | Finite | intensity, force, material (including shield), contact kind (including projectile impact) |
 | `BreakageGenerator` | Finite | intensity, force, size, material |
+| `DamageEffectGenerator` | Finite | intensity, force, size, damage effect kind |
 | `CharacterActionGenerator` | Finite | intensity, force, weight, action kind |
 | `WeaponHandlingGenerator` | Finite | intensity, weight, speed, material, handling kind |
 | `EquipmentMovementGenerator` | Finite | intensity, weight, activity, movement kind |
@@ -300,7 +338,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include vocal pain/exertion and death sounds, blood-splatter effects, bone breaks, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include vocal pain/exertion and death sounds, additional combat contacts, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
 
 
 ## Application independence

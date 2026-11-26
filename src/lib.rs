@@ -32,14 +32,15 @@ pub mod prelude {
     pub use crate::preset::{MusicPace, MusicPreset};
     pub use crate::procedural::{
         BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
-        CharacterActionGenerator, CharacterActionKind, EquipmentMovementConfig,
-        EquipmentMovementGenerator, EquipmentMovementKind, FootstepConfig, FootstepGenerator,
-        FootstepSurface, ImpactConfig, ImpactGenerator, ImpactMaterial, ObjectInteractionConfig,
-        ObjectInteractionGenerator, ObjectInteractionKind, ObjectInteractionMaterial,
-        ProceduralError, ProceduralGenerator, RainConfig, RainGenerator, WeaponHandlingConfig,
-        WeaponHandlingGenerator, WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig,
-        WeaponImpactGenerator, WeaponImpactKind, WindConfig, WindGenerator,
-        MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
+        CharacterActionGenerator, CharacterActionKind, DamageEffectConfig, DamageEffectGenerator,
+        DamageEffectKind, EquipmentMovementConfig, EquipmentMovementGenerator,
+        EquipmentMovementKind, FootstepConfig, FootstepGenerator, FootstepSurface, ImpactConfig,
+        ImpactGenerator, ImpactMaterial, ObjectInteractionConfig, ObjectInteractionGenerator,
+        ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError, ProceduralGenerator,
+        RainConfig, RainGenerator, WeaponHandlingConfig, WeaponHandlingGenerator,
+        WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactGenerator,
+        WeaponImpactKind, WindConfig, WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE,
+        MIN_PROCEDURAL_SAMPLE_RATE,
     };
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
