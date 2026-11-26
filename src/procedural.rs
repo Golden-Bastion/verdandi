@@ -485,9 +485,7 @@ impl ProceduralGenerator for FootstepGenerator {
                     * (-t * profile.transient_decay).exp()
                     * profile.transient_gain
                     * (0.65 + self.brightness * 0.70);
-                (body + texture + transient)
-                    * self.intensity
-                    * (1.0 - progress).max(0.0)
+                (body + texture + transient) * self.intensity * (1.0 - progress).max(0.0)
             } else {
                 self.low_pass += (0.06 + self.brightness * 0.72) * (noise - self.low_pass);
                 let body =
@@ -1577,7 +1575,6 @@ mod tests {
         assert_eq!(expected_rain, actual_rain);
         assert!(rain_samples.iter().any(|sample| sample.abs() > 0.001));
     }
-
 
     #[test]
     fn surface_footsteps_are_deterministic_across_blocks_and_end_in_silence() {
