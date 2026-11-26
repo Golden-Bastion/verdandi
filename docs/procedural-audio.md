@@ -27,9 +27,9 @@ Submit the resulting clip through the existing effects playback API. Keep the ow
 
 ### Choosing a footstep surface
 
-The original \`FootstepGenerator::new\` constructor remains material-neutral and retains its existing sound profile. When the host knows the ground material, use \`FootstepGenerator::new_for_surface\` with one of the built-in \`FootstepSurface\` profiles: dirt, grass, gravel, wood, stone, metal, shallow water, or snow. The same intensity and brightness controls apply; brightness adjusts the high-frequency texture. The surface affects body resonance, friction, and the contact transient.
+The original `FootstepGenerator::new` constructor remains material-neutral and retains its existing sound profile. When the host knows the ground material, use `FootstepGenerator::new_for_surface` with one of the built-in `FootstepSurface` profiles: dirt, grass, gravel, wood, stone, metal, shallow water, or snow. The same intensity and brightness controls apply; brightness adjusts the high-frequency texture. The surface affects body resonance, friction, and the contact transient.
 
-\`\`\`rust
+```rust
 use std::sync::Arc;
 use verdandi::prelude::{
     AudioClip, FootstepConfig, FootstepGenerator, FootstepSurface, ProceduralGenerator,
@@ -44,7 +44,7 @@ fn make_gravel_footstep(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error:
     generator.render(&mut pcm)?;
     Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
 }
-\`\`\`
+```
 
 Surface profiles are stylized sound-design starting points, not recordings or physical contact simulations. The host decides which surface applies, and may continue using recorded footsteps for distinctive footwear, movement styles, or highly realistic material detail.
 
