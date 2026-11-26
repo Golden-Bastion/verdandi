@@ -2844,7 +2844,6 @@ impl ProceduralGenerator for ToolActionGenerator {
     }
 }
 
-
 #[derive(Clone, Copy)]
 struct FormantResonator {
     b0: f32,
@@ -3054,10 +3053,7 @@ pub struct CharacterVocalizationGenerator {
 
 impl CharacterVocalizationGenerator {
     /// Construct one deterministic nonverbal vocalization with independent seeded streams.
-    pub fn new(
-        config: CharacterVocalizationConfig,
-        seed: u64,
-    ) -> Result<Self, ProceduralError> {
+    pub fn new(config: CharacterVocalizationConfig, seed: u64) -> Result<Self, ProceduralError> {
         validate_rate(config.sample_rate)?;
         validate_unit(config.intensity)?;
         validate_unit(config.effort)?;
@@ -3117,8 +3113,7 @@ impl ProceduralGenerator for CharacterVocalizationGenerator {
 
             let progress = self.position as f32 / self.total as f32;
             let attack = vocal_smooth(progress / self.profile.attack_fraction.max(0.001));
-            let release =
-                vocal_smooth((1.0 - progress) / self.profile.release_fraction.max(0.001));
+            let release = vocal_smooth((1.0 - progress) / self.profile.release_fraction.max(0.001));
             let envelope = attack * release;
             let pitch_shape = self.profile.pitch_start
                 + (self.profile.pitch_end - self.profile.pitch_start) * progress;
@@ -3446,10 +3441,9 @@ impl MechanicalActionGenerator {
                 let jitter = (contact_rng.next_f32() - 0.5) * 0.028;
                 let progress = (profile.contact_positions[index] + jitter).clamp(0.015, 0.98);
                 let start_frame = (contact_window * progress) as u32;
-                let frequency = (material_frequency
-                    * weight_pitch
-                    * (0.72 + contact_rng.next_f32() * 0.70))
-                    .min(sample_rate * 0.40);
+                let frequency =
+                    (material_frequency * weight_pitch * (0.72 + contact_rng.next_f32() * 0.70))
+                        .min(sample_rate * 0.40);
                 let amplitude = profile.contact_gain
                     * (0.72 + config.force * 0.56)
                     * (0.76 + config.weight * 0.40)
@@ -3460,8 +3454,7 @@ impl MechanicalActionGenerator {
                     amplitude,
                     phase: contact_rng.next_f32(),
                     phase_step: frequency / sample_rate,
-                    decay: profile.contact_decay * damping
-                        * (0.80 + contact_rng.next_f32() * 0.40),
+                    decay: profile.contact_decay * damping * (0.80 + contact_rng.next_f32() * 0.40),
                 }
             });
 
@@ -4127,7 +4120,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn character_vocalizations_are_deterministic_across_blocks_and_finish_cleanly() {
         for kind in [
@@ -4137,7 +4129,10 @@ mod tests {
             CharacterVocalizationKind::Pain,
             CharacterVocalizationKind::DeathGroan,
         ] {
-            let config = CharacterVocalizationConfig { kind, ..CharacterVocalizationConfig::default() };
+            let config = CharacterVocalizationConfig {
+                kind,
+                ..CharacterVocalizationConfig::default()
+            };
             let mut whole = CharacterVocalizationGenerator::new(config, 0xC0FFEE).unwrap();
             let mut split = CharacterVocalizationGenerator::new(config, 0xC0FFEE).unwrap();
             let expected = render(&mut whole, 60_000);
@@ -4167,7 +4162,10 @@ mod tests {
             .into_iter()
             .map(|kind| {
                 let mut generator = CharacterVocalizationGenerator::new(
-                    CharacterVocalizationConfig { kind, ..CharacterVocalizationConfig::default() },
+                    CharacterVocalizationConfig {
+                        kind,
+                        ..CharacterVocalizationConfig::default()
+                    },
                     77,
                 )
                 .unwrap();
@@ -4194,12 +4192,18 @@ mod tests {
         assert_ne!(first_pcm, render(&mut other_seed, 24_000));
 
         let mut low_pitch = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { pitch_hz: 90.0, ..config },
+            CharacterVocalizationConfig {
+                pitch_hz: 90.0,
+                ..config
+            },
             12,
         )
         .unwrap();
         let mut high_pitch = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { pitch_hz: 260.0, ..config },
+            CharacterVocalizationConfig {
+                pitch_hz: 260.0,
+                ..config
+            },
             12,
         )
         .unwrap();
@@ -4207,48 +4211,75 @@ mod tests {
         assert_ne!(first_pcm, render(&mut high_pitch, 24_000));
 
         let mut dry = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { breathiness: 0.05, ..config },
+            CharacterVocalizationConfig {
+                breathiness: 0.05,
+                ..config
+            },
             12,
         )
         .unwrap();
         let mut breathy = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { breathiness: 0.95, ..config },
+            CharacterVocalizationConfig {
+                breathiness: 0.95,
+                ..config
+            },
             12,
         )
         .unwrap();
         assert_ne!(render(&mut dry, 24_000), render(&mut breathy, 24_000));
 
         let mut low_effort = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { effort: 0.1, ..config },
+            CharacterVocalizationConfig {
+                effort: 0.1,
+                ..config
+            },
             12,
         )
         .unwrap();
         let mut high_effort = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { effort: 0.95, ..config },
+            CharacterVocalizationConfig {
+                effort: 0.95,
+                ..config
+            },
             12,
         )
         .unwrap();
-        assert_ne!(render(&mut low_effort, 24_000), render(&mut high_effort, 24_000));
+        assert_ne!(
+            render(&mut low_effort, 24_000),
+            render(&mut high_effort, 24_000)
+        );
 
         let mut light = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { weight: 0.1, ..config },
+            CharacterVocalizationConfig {
+                weight: 0.1,
+                ..config
+            },
             12,
         )
         .unwrap();
         let mut heavy = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { weight: 0.95, ..config },
+            CharacterVocalizationConfig {
+                weight: 0.95,
+                ..config
+            },
             12,
         )
         .unwrap();
         assert_ne!(render(&mut light, 24_000), render(&mut heavy, 24_000));
 
         let mut quiet = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { intensity: 0.2, ..config },
+            CharacterVocalizationConfig {
+                intensity: 0.2,
+                ..config
+            },
             12,
         )
         .unwrap();
         let mut loud = CharacterVocalizationGenerator::new(
-            CharacterVocalizationConfig { intensity: 0.9, ..config },
+            CharacterVocalizationConfig {
+                intensity: 0.9,
+                ..config
+            },
             12,
         )
         .unwrap();
@@ -4259,28 +4290,40 @@ mod tests {
     fn character_vocalization_rejects_invalid_configuration_and_odd_output() {
         assert!(matches!(
             CharacterVocalizationGenerator::new(
-                CharacterVocalizationConfig { pitch_hz: f32::NAN, ..CharacterVocalizationConfig::default() },
+                CharacterVocalizationConfig {
+                    pitch_hz: f32::NAN,
+                    ..CharacterVocalizationConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidParameter)
         ));
         assert!(matches!(
             CharacterVocalizationGenerator::new(
-                CharacterVocalizationConfig { pitch_hz: 401.0, ..CharacterVocalizationConfig::default() },
+                CharacterVocalizationConfig {
+                    pitch_hz: 401.0,
+                    ..CharacterVocalizationConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidParameter)
         ));
         assert!(matches!(
             CharacterVocalizationGenerator::new(
-                CharacterVocalizationConfig { breathiness: -0.1, ..CharacterVocalizationConfig::default() },
+                CharacterVocalizationConfig {
+                    breathiness: -0.1,
+                    ..CharacterVocalizationConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidParameter)
         ));
         assert!(matches!(
             CharacterVocalizationGenerator::new(
-                CharacterVocalizationConfig { sample_rate: 1_000, ..CharacterVocalizationConfig::default() },
+                CharacterVocalizationConfig {
+                    sample_rate: 1_000,
+                    ..CharacterVocalizationConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidSampleRate)
@@ -4351,7 +4394,11 @@ mod tests {
             .into_iter()
             .map(|material| {
                 let mut generator = MechanicalActionGenerator::new(
-                    MechanicalActionConfig { material, kind: MechanicalActionKind::HingeClose, ..base },
+                    MechanicalActionConfig {
+                        material,
+                        kind: MechanicalActionKind::HingeClose,
+                        ..base
+                    },
                     89,
                 )
                 .unwrap();
@@ -4376,12 +4423,18 @@ mod tests {
         assert_ne!(first_pcm, render(&mut other_seed, 24_000));
 
         let mut soft = MechanicalActionGenerator::new(
-            MechanicalActionConfig { force: 0.1, ..config },
+            MechanicalActionConfig {
+                force: 0.1,
+                ..config
+            },
             3,
         )
         .unwrap();
         let mut forceful = MechanicalActionGenerator::new(
-            MechanicalActionConfig { force: 0.95, ..config },
+            MechanicalActionConfig {
+                force: 0.95,
+                ..config
+            },
             3,
         )
         .unwrap();
@@ -4389,36 +4442,54 @@ mod tests {
         assert_ne!(first_pcm, render(&mut forceful, 24_000));
 
         let mut slow = MechanicalActionGenerator::new(
-            MechanicalActionConfig { speed: 0.1, ..config },
+            MechanicalActionConfig {
+                speed: 0.1,
+                ..config
+            },
             3,
         )
         .unwrap();
         let mut fast = MechanicalActionGenerator::new(
-            MechanicalActionConfig { speed: 0.95, ..config },
+            MechanicalActionConfig {
+                speed: 0.95,
+                ..config
+            },
             3,
         )
         .unwrap();
         assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
 
         let mut light = MechanicalActionGenerator::new(
-            MechanicalActionConfig { weight: 0.1, ..config },
+            MechanicalActionConfig {
+                weight: 0.1,
+                ..config
+            },
             3,
         )
         .unwrap();
         let mut heavy = MechanicalActionGenerator::new(
-            MechanicalActionConfig { weight: 0.95, ..config },
+            MechanicalActionConfig {
+                weight: 0.95,
+                ..config
+            },
             3,
         )
         .unwrap();
         assert_ne!(render(&mut light, 24_000), render(&mut heavy, 24_000));
 
         let mut quiet = MechanicalActionGenerator::new(
-            MechanicalActionConfig { intensity: 0.2, ..config },
+            MechanicalActionConfig {
+                intensity: 0.2,
+                ..config
+            },
             3,
         )
         .unwrap();
         let mut loud = MechanicalActionGenerator::new(
-            MechanicalActionConfig { intensity: 0.9, ..config },
+            MechanicalActionConfig {
+                intensity: 0.9,
+                ..config
+            },
             3,
         )
         .unwrap();
@@ -4429,21 +4500,30 @@ mod tests {
     fn mechanical_action_rejects_invalid_configuration_and_odd_output() {
         assert!(matches!(
             MechanicalActionGenerator::new(
-                MechanicalActionConfig { sample_rate: 1_000, ..MechanicalActionConfig::default() },
+                MechanicalActionConfig {
+                    sample_rate: 1_000,
+                    ..MechanicalActionConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidSampleRate)
         ));
         assert!(matches!(
             MechanicalActionGenerator::new(
-                MechanicalActionConfig { force: f32::NAN, ..MechanicalActionConfig::default() },
+                MechanicalActionConfig {
+                    force: f32::NAN,
+                    ..MechanicalActionConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidParameter)
         ));
         assert!(matches!(
             MechanicalActionGenerator::new(
-                MechanicalActionConfig { speed: 1.1, ..MechanicalActionConfig::default() },
+                MechanicalActionConfig {
+                    speed: 1.1,
+                    ..MechanicalActionConfig::default()
+                },
                 0
             ),
             Err(ProceduralError::InvalidParameter)
@@ -4484,17 +4564,26 @@ mod tests {
     fn blunt_damage_effect_is_distinct_and_bounded() {
         let base = DamageEffectConfig::default();
         let mut splatter = DamageEffectGenerator::new(
-            DamageEffectConfig { kind: DamageEffectKind::BloodSplatter, ..base },
+            DamageEffectConfig {
+                kind: DamageEffectKind::BloodSplatter,
+                ..base
+            },
             0xDA6E,
         )
         .unwrap();
         let mut fracture = DamageEffectGenerator::new(
-            DamageEffectConfig { kind: DamageEffectKind::BoneBreak, ..base },
+            DamageEffectConfig {
+                kind: DamageEffectKind::BoneBreak,
+                ..base
+            },
             0xDA6E,
         )
         .unwrap();
         let mut blunt = DamageEffectGenerator::new(
-            DamageEffectConfig { kind: DamageEffectKind::BluntTrauma, ..base },
+            DamageEffectConfig {
+                kind: DamageEffectKind::BluntTrauma,
+                ..base
+            },
             0xDA6E,
         )
         .unwrap();
