@@ -1102,6 +1102,267 @@ impl ProceduralGenerator for CharacterActionGenerator {
     }
 }
 
+const WEAPON_HANDLING_EVENTS: usize = 4;
+
+#[derive(Clone, Copy)]
+struct WeaponHandlingEvent {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl WeaponHandlingEvent {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Dominant material character for a weapon-handling sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WeaponHandlingMaterial {
+    /// Bright metal fittings and mechanical resonance.
+    Metal,
+    /// Dry wooden contact and a muted body.
+    Wood,
+    /// Soft friction and subdued fittings, suitable for leather-bound gear.
+    Leather,
+}
+
+impl WeaponHandlingMaterial {
+    fn profile(self) -> (f32, f32, f32, f32) {
+        match self {
+            Self::Metal => (0.045, 1_360.0, 4.8, 0.48),
+            Self::Wood => (0.11, 430.0, 10.5, 0.36),
+            Self::Leather => (0.18, 245.0, 14.0, 0.29),
+        }
+    }
+}
+
+/// Weapon interaction represented by a procedural handling sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WeaponHandlingKind {
+    /// Drawing or unsheathing a weapon, with movement and a release fitting sound.
+    Draw,
+    /// Returning a weapon to its scabbard or holder, with a closing contact.
+    Sheathe,
+    /// A short sequence of generic weapon-mechanism handling clicks.
+    Reload,
+}
+
+impl WeaponHandlingKind {
+    fn profile(self) -> (f32, f32, f32, f32, f32, usize, f32) {
+        match self {
+            Self::Draw => (0.52, 0.62, 0.34, 0.009, 4.6, 2, 0.42),
+            Self::Sheathe => (0.48, 0.52, 0.30, 0.011, 5.0, 2, 0.38),
+            Self::Reload => (0.72, 0.42, 0.25, 0.007, 4.0, 4, 0.34),
+        }
+    }
+
+    fn event_positions(self) -> [f32; WEAPON_HANDLING_EVENTS] {
+        match self {
+            Self::Draw => [0.08, 0.88, 0.0, 0.0],
+            Self::Sheathe => [0.14, 0.88, 0.0, 0.0],
+            Self::Reload => [0.10, 0.36, 0.66, 0.90],
+        }
+    }
+}
+
+/// Configuration for one deterministic weapon-handling sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponHandlingConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Relative weapon heft, 0.0..=1.0. Higher values lower the resonant body and add weight.
+    pub weight: f32,
+    /// Handling speed, 0.0..=1.0. Higher values shorten the action and tighten its movement.
+    pub speed: f32,
+    /// Dominant material character of the weapon and its fittings.
+    pub material: WeaponHandlingMaterial,
+    /// Handling action to render.
+    pub kind: WeaponHandlingKind,
+}
+
+impl Default for WeaponHandlingConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.8,
+            weight: 0.55,
+            speed: 0.55,
+            material: WeaponHandlingMaterial::Metal,
+            kind: WeaponHandlingKind::Draw,
+        }
+    }
+}
+
+/// Finite deterministic generator for weapon drawing, sheathing, and generic reload handling.
+///
+/// The material selects the friction and resonance character, while weight and speed alter the
+/// resonant body and action timing. Small contact events are prepared from the seed at
+/// construction and stored in a fixed-size array. Rendering is bounded and allocation-free.
+/// These are stylized generic handling effects, not recordings or simulations of a particular
+/// weapon mechanism.
+pub struct WeaponHandlingGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    movement_gain: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    events: [WeaponHandlingEvent; WEAPON_HANDLING_EVENTS],
+}
+
+impl WeaponHandlingGenerator {
+    /// Construct one deterministic weapon-handling sound with an independent random stream.
+    pub fn new(config: WeaponHandlingConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.weight)?;
+        validate_unit(config.speed)?;
+
+        let (noise_coefficient, material_frequency, material_decay, material_texture) =
+            config.material.profile();
+        let (
+            base_duration,
+            movement_gain,
+            body_gain,
+            body_attack,
+            body_decay,
+            event_count,
+            event_gain,
+        ) = config.kind.profile();
+
+        let sample_rate = config.sample_rate as f32;
+        let duration_scale = 1.30 - config.speed * 0.60;
+        let total = (sample_rate * base_duration * duration_scale) as u32;
+        let mut rng = Rng::new(derive_seed(seed, 0x5748_4E44, 0));
+        let weight_pitch = 1.25 - config.weight * 0.48;
+        let speed_pitch = 0.94 + config.speed * 0.12;
+        let body_start_frequency =
+            (material_frequency * weight_pitch * speed_pitch).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (body_start_frequency * (0.78 + config.speed * 0.16)).min(sample_rate * 0.40);
+        let body_phase = rng.next_f32();
+
+        let event_duration = (sample_rate * (0.020 + (1.0 - config.speed) * 0.018)) as u32;
+        let event_positions = config.kind.event_positions();
+        let events: [WeaponHandlingEvent; WEAPON_HANDLING_EVENTS] = std::array::from_fn(|index| {
+            if index >= event_count {
+                return WeaponHandlingEvent {
+                    start_frame: total,
+                    duration_frames: 0,
+                    amplitude: 0.0,
+                    phase: 0.0,
+                    phase_step: 0.0,
+                    decay: 1.0,
+                };
+            }
+
+            let jitter = (rng.next_f32() - 0.5) * 0.025;
+            let progress = (event_positions[index] + jitter).clamp(0.025, 0.975);
+            let start_frame = (total as f32 * progress) as u32;
+            let frequency = (material_frequency * (0.72 + rng.next_f32() * 0.88) * weight_pitch)
+                .min(sample_rate * 0.40);
+            let amplitude = event_gain
+                * material_texture
+                * (0.68 + rng.next_f32() * 0.64)
+                * (0.82 + config.weight * 0.36);
+            WeaponHandlingEvent {
+                start_frame,
+                duration_frames: event_duration,
+                amplitude,
+                phase: rng.next_f32(),
+                phase_step: frequency / sample_rate,
+                decay: material_decay * (0.78 + rng.next_f32() * 0.44),
+            }
+        });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            position: 0,
+            total,
+            rng,
+            noise_state: 0.0,
+            noise_coefficient,
+            movement_gain: movement_gain * material_texture * (0.78 + config.speed * 0.38),
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack,
+            body_decay: body_decay * (1.08 - config.weight * 0.18),
+            body_gain: body_gain * (0.78 + config.weight * 0.40),
+            events,
+        })
+    }
+}
+
+impl ProceduralGenerator for WeaponHandlingGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let movement_envelope = (TAU * progress * 0.5).sin();
+            let movement = (noise - self.noise_state) * movement_envelope * self.movement_gain;
+            let body_attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = body_attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let contacts: f32 = self
+                .events
+                .iter()
+                .map(|event| event.sample(self.position, self.sample_rate))
+                .sum();
+            let sample = (movement + body + contacts) * self.intensity;
+            let sample = sample.clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1689,6 +1950,188 @@ mod tests {
         ));
         let mut generator =
             CharacterActionGenerator::new(CharacterActionConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+    #[test]
+    fn weapon_handling_is_deterministic_across_blocks_and_finishes_cleanly() {
+        let config = WeaponHandlingConfig {
+            kind: WeaponHandlingKind::Reload,
+            ..WeaponHandlingConfig::default()
+        };
+        let mut whole = WeaponHandlingGenerator::new(config, 0x5745_4150).unwrap();
+        let mut split = WeaponHandlingGenerator::new(config, 0x5745_4150).unwrap();
+        assert!(!whole.is_finished());
+        let expected = render(&mut whole, 50_000);
+        let mut actual = render(&mut split, 12_345);
+        actual.extend(render(&mut split, 37_655));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+
+        let total_frames =
+            (config.sample_rate as f32 * 0.72 * (1.30 - config.speed * 0.60)) as usize;
+        assert!(expected[total_frames * 2..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+    #[test]
+    fn weapon_handling_kinds_and_materials_change_the_sound() {
+        let base = WeaponHandlingConfig::default();
+        let mut draw = WeaponHandlingGenerator::new(base, 41).unwrap();
+        let mut sheathe = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                kind: WeaponHandlingKind::Sheathe,
+                ..base
+            },
+            41,
+        )
+        .unwrap();
+        let mut reload = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                kind: WeaponHandlingKind::Reload,
+                ..base
+            },
+            41,
+        )
+        .unwrap();
+        let draw_pcm = render(&mut draw, 40_000);
+        let sheathe_pcm = render(&mut sheathe, 40_000);
+        let reload_pcm = render(&mut reload, 40_000);
+        bounded(&draw_pcm);
+        bounded(&sheathe_pcm);
+        bounded(&reload_pcm);
+        assert!(draw.is_finished() && sheathe.is_finished() && reload.is_finished());
+        assert_ne!(draw_pcm, sheathe_pcm);
+        assert_ne!(draw_pcm, reload_pcm);
+
+        let mut wood = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                material: WeaponHandlingMaterial::Wood,
+                ..base
+            },
+            41,
+        )
+        .unwrap();
+        let mut leather = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                material: WeaponHandlingMaterial::Leather,
+                ..base
+            },
+            41,
+        )
+        .unwrap();
+        let wood_pcm = render(&mut wood, 40_000);
+        let leather_pcm = render(&mut leather, 40_000);
+        bounded(&wood_pcm);
+        bounded(&leather_pcm);
+        assert!(wood.is_finished() && leather.is_finished());
+        assert_ne!(draw_pcm, wood_pcm);
+        assert_ne!(draw_pcm, leather_pcm);
+    }
+
+    #[test]
+    fn weapon_handling_seed_and_controls_are_effective() {
+        let base = WeaponHandlingConfig::default();
+        let mut first = WeaponHandlingGenerator::new(base, 5).unwrap();
+        let first_pcm = render(&mut first, 32_000);
+        let mut same = WeaponHandlingGenerator::new(base, 5).unwrap();
+        let mut other_seed = WeaponHandlingGenerator::new(base, 6).unwrap();
+        assert_eq!(first_pcm, render(&mut same, 32_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 32_000));
+
+        let mut lighter = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                weight: 0.1,
+                ..base
+            },
+            5,
+        )
+        .unwrap();
+        let mut heavier = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                weight: 0.95,
+                ..base
+            },
+            5,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut lighter, 32_000));
+        assert_ne!(first_pcm, render(&mut heavier, 32_000));
+
+        let mut slower =
+            WeaponHandlingGenerator::new(WeaponHandlingConfig { speed: 0.1, ..base }, 5).unwrap();
+        let mut faster = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                speed: 0.95,
+                ..base
+            },
+            5,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut slower, 32_000));
+        assert_ne!(first_pcm, render(&mut faster, 32_000));
+
+        let mut quiet = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig {
+                intensity: 0.2,
+                ..base
+            },
+            5,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut quiet, 32_000));
+    }
+
+    #[test]
+    fn weapon_handling_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    speed: f32::NAN,
+                    ..WeaponHandlingConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    weight: 1.1,
+                    ..WeaponHandlingConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    intensity: f32::NAN,
+                    ..WeaponHandlingConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    sample_rate: 1_000,
+                    ..WeaponHandlingConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        let mut generator =
+            WeaponHandlingGenerator::new(WeaponHandlingConfig::default(), 0).unwrap();
         assert_eq!(
             generator.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
