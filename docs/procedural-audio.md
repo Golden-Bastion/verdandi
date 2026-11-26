@@ -133,9 +133,9 @@ A jump produces a short rising movement burst, a landing emphasizes a weighted b
 
 ## Generating weapon-handling sounds
 
-Use \`WeaponHandlingGenerator\` for generic draw, sheathe, and reload sounds. The dominant material profile can be metal, wood, or leather. \`weight\` shifts the resonant body toward heavier or lighter equipment, while \`speed\` changes the action duration and tightness of its contact sequence. The seed provides repeatable variation.
+Use `WeaponHandlingGenerator` for generic draw, sheathe, and reload sounds. The dominant material profile can be metal, wood, or leather. `weight` shifts the resonant body toward heavier or lighter equipment, while `speed` changes the action duration and tightness of its contact sequence. The seed provides repeatable variation.
 
-\`\`\`rust
+```rust
 use std::sync::Arc;
 use verdandi::prelude::{
     AudioClip, ProceduralGenerator, WeaponHandlingConfig, WeaponHandlingGenerator,
@@ -157,7 +157,7 @@ fn make_weapon_draw(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
     generator.render(&mut pcm)?;
     Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
 }
-\`\`\`
+```
 
 These profiles are intentionally generic. A consuming game may select a material profile and seed from its own weapon data, or use recorded assets where a particular weapon mechanism needs a distinctive identity. Verdandi does not infer weapon classes or own the host's gameplay state. The generator prepares its small contact sequence at construction and does not allocate while rendering.
 
