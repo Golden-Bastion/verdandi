@@ -39,6 +39,7 @@ pub mod prelude {
         ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError, ProceduralGenerator,
         RainConfig, RainGenerator, WeaponHandlingConfig, WeaponHandlingGenerator,
         WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactGenerator,
+        ToolActionConfig, ToolActionGenerator, ToolActionKind, ToolActionMaterial,
         WeaponImpactKind, WindConfig, WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE,
         MIN_PROCEDURAL_SAMPLE_RATE,
     };
