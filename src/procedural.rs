@@ -1542,7 +1542,6 @@ impl ProceduralGenerator for WeaponHandlingGenerator {
     }
 }
 
-
 const EQUIPMENT_MOVEMENT_EVENTS: usize = 5;
 
 #[derive(Clone, Copy)]
@@ -1729,8 +1728,7 @@ impl EquipmentMovementGenerator {
         let mut event_rng = Rng::new(derive_seed(seed, 0x4551_4556, stream_index));
         let body_phase = phase_rng.next_f32();
 
-        let event_duration =
-            (sample_rate * (0.024 + config.activity * 0.016)) as u32;
+        let event_duration = (sample_rate * (0.024 + config.activity * 0.016)) as u32;
         let event_positions = config.kind.event_positions();
         let events: [EquipmentMovementEvent; EQUIPMENT_MOVEMENT_EVENTS] =
             std::array::from_fn(|index| {
@@ -1823,8 +1821,7 @@ impl ProceduralGenerator for EquipmentMovementGenerator {
             frame[0] = sample;
             frame[1] = sample;
 
-            self.body_phase =
-                (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
             self.position += 1;
         }
 
@@ -1869,7 +1866,6 @@ mod tests {
         assert_eq!(expected_rain, actual_rain);
         assert!(rain_samples.iter().any(|sample| sample.abs() > 0.001));
     }
-
 
     #[test]
     fn equipment_movement_is_deterministic_across_blocks_and_finishes_cleanly() {
