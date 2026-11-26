@@ -10,7 +10,7 @@ Music is generated at runtime by default; no recorded music library is required.
 - Layered four-bar composition, seeded theme selection, automatic or manual intensity, and per-layer controls.
 - Runtime seed and preset changes, crossfades, transport pause/resume, gain controls, and synthesized stingers.
 - Optional SFZ parsing and sample playback, with procedural fallback for unmatched notes.
-- Deterministic procedural wind, rain, surface-shaped footsteps, weapon and projectile impacts with material and shield profiles, material-specific breakage with debris, non-vocal blood-splatter and bone-break effects, character jump/landing/fall sounds, weapon draw/sheathe/reload handling, cloth/gear/armor movement, and object pickup/place/drop/open/close/toggle sounds, tool chopping/digging/scraping/sawing effects, rendered into caller-owned PCM buffers; vocal pain/exertion and death vocalizations, additional combat contacts, and specialized destruction remain planned.
+- Deterministic procedural wind, rain, surface-shaped footsteps, weapon and projectile impacts with shield/armor-specific contacts, material breakage, blood-splatter, bone-break and blunt-trauma effects, nonverbal synthetic inhale/exhale/exertion/pain/death cues, character movement, weapon and equipment handling, object interactions, tool actions, and hinge/latch/lock/crank sounds, rendered into caller-owned PCM buffers.
 - One-shot effects, persistent keyed loops, fades, independent music/effects/ambience buses, and voice limits.
 - Bounded decoded-PCM streaming for long effects and environmental audio.
 - An engine-independent core with an optional Bevy 0.20 integration.
@@ -23,7 +23,7 @@ The default feature enables the Bevy 0.20 plugin:
 
 ~~~toml
 [dependencies]
-verdandi = "0.7"
+verdandi = "0.8"
 ~~~
 
 ~~~rust
@@ -46,7 +46,7 @@ For a custom audio host without Bevy:
 
 ~~~toml
 [dependencies]
-verdandi = { version = "0.7", default-features = false }
+verdandi = { version = "0.8", default-features = false }
 ~~~
 
 Start with the [documentation index](docs/README.md). It contains integration guides, full examples, the public API map, and the real-time/ownership contract. The symbol-level reference is available on [docs.rs](https://docs.rs/verdandi/latest/verdandi/).

@@ -51,7 +51,7 @@ Surface profiles are stylized sound-design starting points, not recordings or ph
 
 ## Generating a weapon impact
 
-Use `WeaponImpactGenerator` for a strike, blade clash, parry, block, or projectile impact. Its material profile shapes the transient and resonant body; force and intensity control the contact's weight and output level. The seed provides repeatable variation.
+Use `WeaponImpactGenerator` for a strike, blade clash, parry, block, projectile impact, shield bash, armor strike, or projectile deflection. Its material profile shapes the transient and resonant body; force and intensity control the contact's weight and output level. The seed provides repeatable variation.
 
 ```rust
 use std::sync::Arc;
@@ -76,7 +76,7 @@ fn make_sword_clash(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 }
 ```
 
-`ImpactMaterial` provides metal, wood, stone, flesh, armor, and a shield profile with a resonant face and brighter rim response. `WeaponImpactKind` distinguishes strikes, blade clashes, parries, blocks, and projectile impacts. These profiles are stylized starting points; tune them against actual playback before treating them as final sound assets.
+`ImpactMaterial` provides metal, wood, stone, flesh, armor, and a shield profile with a resonant face and brighter rim response. `WeaponImpactKind` distinguishes strikes, blade clashes, parries, blocks, projectile impacts, shield bashes, armor strikes, and projectile deflections. These profiles are stylized starting points; tune them against actual playback before treating them as final sound assets.
 
 A shield block combines the shield material profile with the existing block contact shape:
 
@@ -129,9 +129,9 @@ Submit the resulting clip through the existing effects playback API. The generat
 
 ## Generating non-vocal damage effects
 
-Use `DamageEffectGenerator` for two stylized, non-vocal damage textures:
-`DamageEffectKind::BloodSplatter` and `DamageEffectKind::BoneBreak`. `force` changes the
-event energy, `size` changes the duration, resonance, and spread of secondary contacts, and
+Use `DamageEffectGenerator` for three stylized, non-vocal damage textures:
+`DamageEffectKind::BloodSplatter`, `DamageEffectKind::BoneBreak`, and `DamageEffectKind::BluntTrauma`.
+`force` changes the event energy, `size` changes the duration, resonance, and spread of secondary contacts, and
 `intensity` controls the final level.
 
 ```rust
@@ -158,9 +158,49 @@ fn make_bone_break(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Erro
 
 The splatter profile combines a wet broadband texture with a fixed sequence of small droplet-like
 contacts. The bone-break profile uses a sharper fracture transient and shorter secondary cracks.
-These are intentionally stylized effect layers, not anatomical simulations. They do not include
-speech, pain cries, breathing, or death vocalizations; use host-provided or sampled performances
-when a recognizable character voice is required. Prepare the PCM outside the playback callback
+The blunt-trauma profile emphasizes a low body thump with a short dull crack. These are stylized
+effect layers, not anatomical simulations. For nonverbal voice fallback, use the
+`CharacterVocalizationGenerator` described below; prefer supplied recordings when a recognizable
+character performance is available. Prepare the PCM outside the playback callback and submit it
+through the existing effects path.
+
+
+## Generating synthetic character vocalizations
+
+Use `CharacterVocalizationGenerator` as a deterministic fallback when a suitable host-provided
+recording is unavailable. It synthesizes nonverbal `Inhale`, `Exhale`, `Exertion`, `Pain`, and
+`DeathGroan` cues from a glottal pulse, three vocal-tract formant resonators, and seeded breath
+noise. The base pitch, effort, breathiness, and relative vocal-tract weight shape the result.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, CharacterVocalizationConfig, CharacterVocalizationGenerator,
+    CharacterVocalizationKind, ProceduralGenerator,
+};
+
+fn make_pain_fallback(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = CharacterVocalizationConfig {
+        sample_rate: 48_000,
+        intensity: 0.72,
+        pitch_hz: 155.0,
+        effort: 0.9,
+        breathiness: 0.38,
+        weight: 0.55,
+        kind: CharacterVocalizationKind::Pain,
+    };
+    let mut generator = CharacterVocalizationGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 9) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+The host should select a recording first when one exists and use this generator when it does not.
+Verdandi does not own an asset catalogue or decide whether a character has a voice asset. These
+synthetic cues are intentionally nonverbal and generic: they are not intelligible speech, voice
+cloning, or realistic actor performances. Render the finite clip outside the playback callback
 and submit it through the existing effects path.
 
 ## Generating character movement sounds
@@ -333,6 +373,43 @@ surface simulations. Use supplied recordings where a specific tool, engine, or m
 recognizable identity. Generate clips outside the playback callback and submit them through the
 existing effects path.
 
+
+## Generating hinge and mechanism sounds
+
+Use `MechanicalActionGenerator` for generic hinge, latch, lock, and crank cues. The supported
+actions are `HingeOpen`, `HingeClose`, `LatchEngage`, `LatchRelease`, `LockTurn`, and
+`Crank`. `MechanicalActionMaterial` selects a wood, metal, or stone response. Force controls
+contact energy, weight shifts the resonant body, and speed changes duration and contact timing.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, MechanicalActionConfig, MechanicalActionGenerator, MechanicalActionKind,
+    MechanicalActionMaterial, ProceduralGenerator,
+};
+
+fn make_latch_click(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = MechanicalActionConfig {
+        sample_rate: 48_000,
+        intensity: 0.8,
+        force: 0.65,
+        weight: 0.4,
+        speed: 0.7,
+        material: MechanicalActionMaterial::Metal,
+        kind: MechanicalActionKind::LatchEngage,
+    };
+    let mut generator = MechanicalActionGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 4) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+These profiles provide generic movement, friction, and contact layers; they do not simulate a real
+hinge, lock, or machine. Use a host recording when a particular door, latch, or mechanism needs
+recognizable hardware detail.
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.
@@ -368,18 +445,20 @@ Generation is not intended to run in the playback callback. Although rendering i
 |---|---|---|
 | `FootstepGenerator` | Finite | intensity, brightness, optional surface profile |
 | `ImpactGenerator` | Finite | intensity, resonance |
-| `WeaponImpactGenerator` | Finite | intensity, force, material (including shield), contact kind (including projectile impact) |
+| `WeaponImpactGenerator` | Finite | intensity, force, material, contact kind (including specialized shield/armor/projectile contacts) |
 | `BreakageGenerator` | Finite | intensity, force, size, material |
 | `DamageEffectGenerator` | Finite | intensity, force, size, damage effect kind |
+| `CharacterVocalizationGenerator` | Finite | intensity, pitch, effort, breathiness, vocal-tract weight, vocalization kind |
 | `CharacterActionGenerator` | Finite | intensity, force, weight, action kind |
 | `WeaponHandlingGenerator` | Finite | intensity, weight, speed, material, handling kind |
 | `EquipmentMovementGenerator` | Finite | intensity, weight, activity, movement kind |
 | `ObjectInteractionGenerator` | Finite | intensity, weight, speed, material, object action |
 | `ToolActionGenerator` | Finite | intensity, force, weight, speed, target material, tool action |
+| `MechanicalActionGenerator` | Finite | intensity, force, weight, speed, mechanism material, action kind |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include vocal pain/exertion and death sounds, additional combat contacts, specialized machinery, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+These are initial sound-design building blocks, not a closed catalogue of supported effects. The first expansion now covers nonverbal voice fallback, specialized combat contacts, generic tool actions, and common hinge/lock mechanisms. Further specialized assets or event profiles should be added where real integration needs justify them. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
 
 
 ## Application independence

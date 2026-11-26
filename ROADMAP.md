@@ -210,13 +210,13 @@ Status: **In progress**
 - [x] Add deterministic object-interaction sounds for pickup, placement, drops, opening, closing, and toggles with material, weight, and speed controls.
 - [x] Add deterministic non-vocal blood-splatter and bone-break effects with force and size controls.
 - [x] Add deterministic chopping, digging, scraping, and sawing effects with target-material, force, weight, and speed controls.
-- [ ] Expand the generator toolkit with vocal pain/exertion, breathing and death vocalizations, additional combat contacts, and further object-specific destruction (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
+- [x] Complete the initial generator expansion with specialized shield/armor/projectile contacts, blunt-trauma damage, nonverbal synthetic character vocalizations, and hinge/latch/lock/crank actions (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
 
 **Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
 
 
 ## Game-audio direction
 
-Verdandi is a reusable game-audio engine, not a generic audio toolkit that avoids gameplay concepts. Its public API may expose reusable concepts such as weapon impacts and clashes, parries, armor and shield hits, material response, footsteps, character exertion and death sounds, blood-splatter effects, breakage, and debris. These are library-level sound-design concepts; a consuming game remains responsible for deciding when they occur and how they relate to its entities, combat rules, world, and content catalogue.
+Verdandi is a reusable game-audio engine, not a generic audio toolkit that avoids gameplay concepts. Its public API may expose reusable concepts such as weapon impacts and clashes, shield bashes, armor hits, projectile deflections, material response, footsteps, nonverbal character vocalizations, blood-splatter and blunt-trauma effects, breakage, tools, hinges, latches, locks, and mechanisms. These are library-level sound-design concepts; a consuming game remains responsible for deciding when they occur and how they relate to its entities, combat rules, world, and content catalogue.
 
 Prioritize cohesive generator families with shared synthesis primitives and meaningful controls over isolated one-off effects. The first combat-contact family now covers strikes, blade clashes, parries, and blocks with stylized material profiles. Keep deterministic variation, bounded caller-buffer rendering, and the existing separation between generation and playback. See [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28) for the remaining expansion scope.

@@ -627,6 +627,12 @@ pub enum WeaponImpactKind {
     Block,
     /// A projectile striking a target.
     ProjectileImpact,
+    /// A heavy shield-first impact with a low body and short rim response.
+    ShieldBash,
+    /// A heavy, restrained strike against plate or other rigid armor.
+    ArmorStrike,
+    /// A brief, bright glancing deflection of a projectile from a hard surface.
+    ProjectileDeflection,
 }
 
 impl WeaponImpactKind {
@@ -637,6 +643,9 @@ impl WeaponImpactKind {
             Self::Parry => (0.34, 0.95, 1.32, 0.22, 0.82, 125.0),
             Self::Block => (0.46, 0.82, 0.34, 1.15, 1.42, 76.0),
             Self::ProjectileImpact => (0.30, 1.12, 0.66, 0.58, 0.94, 145.0),
+            Self::ShieldBash => (0.48, 0.92, 0.54, 1.34, 1.56, 82.0),
+            Self::ArmorStrike => (0.43, 0.94, 0.62, 0.84, 1.44, 88.0),
+            Self::ProjectileDeflection => (0.23, 1.24, 1.48, 0.16, 0.62, 184.0),
         }
     }
 }
@@ -668,7 +677,7 @@ impl Default for WeaponImpactConfig {
     }
 }
 
-/// Finite deterministic generator for weapon strikes, clashes, parries, blocks, and projectile impacts.
+/// Finite deterministic generator for weapon strikes, clashes, parries, blocks, projectile impacts, shield bashes, armor strikes, and projectile deflections.
 ///
 /// The material and contact kind select a stylized resonant profile. The seed adds repeatable
 /// variation to the resonant frequencies and phases. This is a sound-design generator, not a
@@ -2210,6 +2219,8 @@ pub enum DamageEffectKind {
     BloodSplatter,
     /// A sharp dry fracture with several short secondary cracks.
     BoneBreak,
+    /// A low, heavy blunt-trauma texture with a short dull crack and body thump.
+    BluntTrauma,
 }
 
 #[derive(Clone, Copy)]
@@ -2268,6 +2279,23 @@ impl DamageEffectKind {
                 event_decay: 62.0,
                 event_positions: [0.02, 0.11, 0.23, 0.39, 0.63, 0.84, 0.0, 0.0],
             },
+            Self::BluntTrauma => DamageEffectProfile {
+                duration: 0.38,
+                noise_coefficient: 0.42,
+                low_noise_gain: 0.40,
+                high_noise_gain: 0.22,
+                noise_decay: 22.0,
+                body_start_frequency: 138.0,
+                body_end_frequency: 92.0,
+                body_attack: 0.0007,
+                body_decay: 13.0,
+                body_gain: 0.32,
+                event_count: 2,
+                event_gain: 0.19,
+                event_duration: 0.020,
+                event_decay: 54.0,
+                event_positions: [0.035, 0.36, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            },
         }
     }
 
@@ -2275,6 +2303,7 @@ impl DamageEffectKind {
         match self {
             Self::BloodSplatter => 0,
             Self::BoneBreak => 1,
+            Self::BluntTrauma => 2,
         }
     }
 }
@@ -2306,9 +2335,9 @@ impl Default for DamageEffectConfig {
     }
 }
 
-/// Finite deterministic generator for stylized blood-splatter and bone-break effects.
+/// Finite deterministic generator for stylized blood-splatter, bone-break, and blunt-trauma effects.
 ///
-/// The two profiles share a bounded one-shot renderer but use different noise, resonance, and
+/// The profiles share a bounded one-shot renderer but use different noise, resonance, and
 /// contact-event balances. Force controls event energy; size changes duration, resonance, and
 /// event spread. Seeded events are prepared at construction in fixed-capacity storage, with
 /// independent streams for noise, phase, and secondary contacts. These are non-vocal sound-design
@@ -2781,6 +2810,697 @@ impl ProceduralGenerator for ToolActionGenerator {
             let action_envelope = (TAU * progress * 0.5).sin();
             let stroke_phase = progress * self.friction_cycles;
             let stroke_envelope = 0.48 + 0.52 * (TAU * stroke_phase).sin().abs();
+            let friction = (self.noise_state * self.low_noise_gain
+                + high_noise * self.high_noise_gain)
+                * self.friction_gain
+                * action_envelope
+                * stroke_envelope;
+
+            let attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let contacts: f32 = self
+                .contacts
+                .iter()
+                .map(|contact| contact.sample(self.position, self.sample_rate))
+                .sum();
+
+            let sample =
+                ((friction + body + contacts) * self.intensity * self.force_gain).clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FormantResonator {
+    b0: f32,
+    a1: f32,
+    a2: f32,
+    previous_1: f32,
+    previous_2: f32,
+    gain: f32,
+}
+
+impl FormantResonator {
+    fn new(sample_rate: f32, frequency: f32, bandwidth: f32, gain: f32) -> Self {
+        let radius = (-std::f32::consts::PI * bandwidth / sample_rate).exp();
+        let angle = TAU * frequency / sample_rate;
+        Self {
+            b0: (1.0 - radius) * (1.0 - radius),
+            a1: -2.0 * radius * angle.cos(),
+            a2: radius * radius,
+            previous_1: 0.0,
+            previous_2: 0.0,
+            gain,
+        }
+    }
+
+    fn tick(&mut self, input: f32) -> f32 {
+        let output = self.b0 * input - self.a1 * self.previous_1 - self.a2 * self.previous_2;
+        self.previous_2 = self.previous_1;
+        self.previous_1 = output;
+        output * self.gain
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CharacterVocalizationProfile {
+    duration: f32,
+    formants: [f32; 3],
+    bandwidths: [f32; 3],
+    gains: [f32; 3],
+    pitch_start: f32,
+    pitch_end: f32,
+    voiced_gain: f32,
+    breath_gain: f32,
+    open_quotient: f32,
+    attack_fraction: f32,
+    release_fraction: f32,
+}
+
+/// Nonverbal character vocalization represented by a finite procedural sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CharacterVocalizationKind {
+    /// An inward breath, primarily airy noise with a faint vocal-tract tone.
+    Inhale,
+    /// An outward breath, with a softer and longer noise release.
+    Exhale,
+    /// A short, forceful nonverbal effort grunt.
+    Exertion,
+    /// A strained, rising-then-falling nonverbal pain cry.
+    Pain,
+    /// A long, descending, breathy vocal-like groan.
+    DeathGroan,
+}
+
+impl CharacterVocalizationKind {
+    fn profile(self) -> CharacterVocalizationProfile {
+        match self {
+            Self::Inhale => CharacterVocalizationProfile {
+                duration: 0.78,
+                formants: [480.0, 1_420.0, 2_680.0],
+                bandwidths: [140.0, 190.0, 340.0],
+                gains: [0.26, 0.24, 0.16],
+                pitch_start: 0.98,
+                pitch_end: 1.02,
+                voiced_gain: 0.035,
+                breath_gain: 0.88,
+                open_quotient: 0.58,
+                attack_fraction: 0.10,
+                release_fraction: 0.16,
+            },
+            Self::Exhale => CharacterVocalizationProfile {
+                duration: 0.94,
+                formants: [560.0, 1_180.0, 2_420.0],
+                bandwidths: [160.0, 210.0, 360.0],
+                gains: [0.25, 0.22, 0.14],
+                pitch_start: 1.02,
+                pitch_end: 0.92,
+                voiced_gain: 0.045,
+                breath_gain: 0.82,
+                open_quotient: 0.62,
+                attack_fraction: 0.07,
+                release_fraction: 0.26,
+            },
+            Self::Exertion => CharacterVocalizationProfile {
+                duration: 0.44,
+                formants: [650.0, 1_320.0, 2_620.0],
+                bandwidths: [120.0, 170.0, 300.0],
+                gains: [0.66, 0.54, 0.28],
+                pitch_start: 1.24,
+                pitch_end: 0.76,
+                voiced_gain: 0.72,
+                breath_gain: 0.34,
+                open_quotient: 0.40,
+                attack_fraction: 0.035,
+                release_fraction: 0.28,
+            },
+            Self::Pain => CharacterVocalizationProfile {
+                duration: 0.76,
+                formants: [820.0, 1_580.0, 2_860.0],
+                bandwidths: [150.0, 190.0, 320.0],
+                gains: [0.62, 0.58, 0.34],
+                pitch_start: 1.36,
+                pitch_end: 0.72,
+                voiced_gain: 0.82,
+                breath_gain: 0.48,
+                open_quotient: 0.43,
+                attack_fraction: 0.12,
+                release_fraction: 0.36,
+            },
+            Self::DeathGroan => CharacterVocalizationProfile {
+                duration: 1.18,
+                formants: [510.0, 980.0, 2_360.0],
+                bandwidths: [180.0, 230.0, 370.0],
+                gains: [0.60, 0.48, 0.25],
+                pitch_start: 0.92,
+                pitch_end: 0.44,
+                voiced_gain: 0.68,
+                breath_gain: 0.62,
+                open_quotient: 0.52,
+                attack_fraction: 0.08,
+                release_fraction: 0.52,
+            },
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::Inhale => 0,
+            Self::Exhale => 1,
+            Self::Exertion => 2,
+            Self::Pain => 3,
+            Self::DeathGroan => 4,
+        }
+    }
+}
+
+/// Configuration for a deterministic synthetic character vocalization.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharacterVocalizationConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Base vocal fundamental in Hz. Valid range: 55.0..=400.0.
+    pub pitch_hz: f32,
+    /// Vocal effort, 0.0..=1.0. Higher values strengthen the voiced source.
+    pub effort: f32,
+    /// Breathiness, 0.0..=1.0. Higher values mix more turbulent air into the source.
+    pub breathiness: f32,
+    /// Relative vocal-tract scale, 0.0..=1.0. Higher values lower the formants and pitch.
+    pub weight: f32,
+    /// Nonverbal vocalization to render.
+    pub kind: CharacterVocalizationKind,
+}
+
+impl Default for CharacterVocalizationConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.72,
+            pitch_hz: 145.0,
+            effort: 0.62,
+            breathiness: 0.48,
+            weight: 0.5,
+            kind: CharacterVocalizationKind::Exertion,
+        }
+    }
+}
+
+fn vocal_smooth(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
+
+/// Finite deterministic source-filter synthesizer for nonverbal character vocalizations.
+///
+/// The source is a seeded glottal pulse mixed with turbulent breath noise and shaped by three
+/// fixed vocal-tract formant resonators. It can provide fallback inhale, exhale, exertion, pain,
+/// and descending groan cues when no suitable host recording is available. It does not synthesize
+/// intelligible speech, reproduce an individual voice, or replace a convincing recorded actor
+/// performance. All resonators and random streams are prepared at construction; rendering uses
+/// fixed state and does not allocate.
+pub struct CharacterVocalizationGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    effort: f32,
+    breathiness: f32,
+    weight: f32,
+    position: u32,
+    total: u32,
+    noise_rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    phase: f32,
+    base_pitch: f32,
+    profile: CharacterVocalizationProfile,
+    formants: [FormantResonator; 3],
+}
+
+impl CharacterVocalizationGenerator {
+    /// Construct one deterministic nonverbal vocalization with independent seeded streams.
+    pub fn new(config: CharacterVocalizationConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.effort)?;
+        validate_unit(config.breathiness)?;
+        validate_unit(config.weight)?;
+        if !config.pitch_hz.is_finite() || !(55.0..=400.0).contains(&config.pitch_hz) {
+            return Err(ProceduralError::InvalidParameter);
+        }
+
+        let profile = config.kind.profile();
+        let sample_rate = config.sample_rate as f32;
+        let total = (sample_rate * profile.duration) as u32;
+        let formant_scale = 1.08 - config.weight * 0.20;
+        let formants = std::array::from_fn(|index| {
+            let frequency = (profile.formants[index] * formant_scale).min(sample_rate * 0.40);
+            FormantResonator::new(
+                sample_rate,
+                frequency,
+                profile.bandwidths[index],
+                profile.gains[index],
+            )
+        });
+        let stream_index = config.kind.stream_index();
+        let noise_rng = Rng::new(derive_seed(seed, 0x4356_4E4F, stream_index));
+        let mut phase_rng = Rng::new(derive_seed(seed, 0x4356_5048, stream_index));
+        let phase = phase_rng.next_f32();
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            effort: config.effort,
+            breathiness: config.breathiness,
+            weight: config.weight,
+            position: 0,
+            total,
+            noise_rng,
+            noise_state: 0.0,
+            noise_coefficient: 0.18,
+            phase,
+            base_pitch: config.pitch_hz,
+            profile,
+            formants,
+        })
+    }
+}
+
+impl ProceduralGenerator for CharacterVocalizationGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let progress = self.position as f32 / self.total as f32;
+            let attack = vocal_smooth(progress / self.profile.attack_fraction.max(0.001));
+            let release = vocal_smooth((1.0 - progress) / self.profile.release_fraction.max(0.001));
+            let envelope = attack * release;
+            let pitch_shape = self.profile.pitch_start
+                + (self.profile.pitch_end - self.profile.pitch_start) * progress;
+            let pitch_scale = (1.08 - self.weight * 0.20) * (0.92 + self.effort * 0.16);
+            let pitch = self.base_pitch * pitch_shape * pitch_scale;
+            let open = self.profile.open_quotient;
+            let pulse = if self.phase < open {
+                (std::f32::consts::PI * self.phase / open).sin().powi(2) - open * 0.5
+            } else {
+                -open * 0.5
+            };
+
+            let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let airy_noise = noise - self.noise_state * 0.35;
+            let voiced_gain = self.profile.voiced_gain
+                * (0.42 + self.effort * 0.80)
+                * (1.0 - self.breathiness * 0.48);
+            let voiced_source = pulse * voiced_gain * envelope;
+            let filtered: f32 = self
+                .formants
+                .iter_mut()
+                .map(|formant| formant.tick(voiced_source))
+                .sum();
+            let breath_gain = self.profile.breath_gain * (0.18 + self.breathiness * 0.92);
+            let breath = airy_noise * breath_gain * envelope;
+            let sample = ((filtered + breath) * self.intensity).clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.phase = (self.phase + pitch / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
+const MECHANICAL_ACTION_CONTACTS: usize = 4;
+
+#[derive(Clone, Copy)]
+struct MechanicalActionContact {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl MechanicalActionContact {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Material character of a generic door or mechanism component.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MechanicalActionMaterial {
+    /// Damped wooden fixture or housing.
+    Wood,
+    /// Metallic hinge, latch, lock, or mechanism.
+    Metal,
+    /// Dense stone or masonry fixture.
+    Stone,
+}
+
+impl MechanicalActionMaterial {
+    fn profile(self) -> (f32, f32, f32, f32, f32) {
+        match self {
+            Self::Wood => (220.0, 0.28, 0.66, 0.34, 1.18),
+            Self::Metal => (1_020.0, 0.18, 0.32, 0.88, 0.62),
+            Self::Stone => (480.0, 0.42, 0.48, 0.60, 0.88),
+        }
+    }
+}
+
+/// Mechanical action represented by a finite procedural sound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MechanicalActionKind {
+    /// A slow hinge movement with a creaking friction bed.
+    HingeOpen,
+    /// A closing movement ending in a weighty contact.
+    HingeClose,
+    /// A latch engaging with one or more crisp contacts.
+    LatchEngage,
+    /// A latch releasing with a short spring-like click.
+    LatchRelease,
+    /// A key or handle turning a generic lock mechanism.
+    LockTurn,
+    /// A sustained hand-driven crank with repeated mechanical movement.
+    Crank,
+}
+
+#[derive(Clone, Copy)]
+struct MechanicalActionProfile {
+    duration: f32,
+    friction_gain: f32,
+    friction_cycles: f32,
+    body_gain: f32,
+    body_attack: f32,
+    body_decay: f32,
+    contact_count: usize,
+    contact_gain: f32,
+    contact_duration: f32,
+    contact_decay: f32,
+    contact_positions: [f32; MECHANICAL_ACTION_CONTACTS],
+}
+
+impl MechanicalActionKind {
+    fn profile(self) -> MechanicalActionProfile {
+        match self {
+            Self::HingeOpen => MechanicalActionProfile {
+                duration: 0.86,
+                friction_gain: 0.58,
+                friction_cycles: 0.9,
+                body_gain: 0.14,
+                body_attack: 0.025,
+                body_decay: 5.0,
+                contact_count: 2,
+                contact_gain: 0.14,
+                contact_duration: 0.028,
+                contact_decay: 30.0,
+                contact_positions: [0.08, 0.92, 0.0, 0.0],
+            },
+            Self::HingeClose => MechanicalActionProfile {
+                duration: 0.58,
+                friction_gain: 0.18,
+                friction_cycles: 0.8,
+                body_gain: 0.44,
+                body_attack: 0.001,
+                body_decay: 10.0,
+                contact_count: 2,
+                contact_gain: 0.34,
+                contact_duration: 0.032,
+                contact_decay: 28.0,
+                contact_positions: [0.82, 0.96, 0.0, 0.0],
+            },
+            Self::LatchEngage => MechanicalActionProfile {
+                duration: 0.25,
+                friction_gain: 0.035,
+                friction_cycles: 1.0,
+                body_gain: 0.16,
+                body_attack: 0.0005,
+                body_decay: 23.0,
+                contact_count: 2,
+                contact_gain: 0.45,
+                contact_duration: 0.018,
+                contact_decay: 48.0,
+                contact_positions: [0.36, 0.76, 0.0, 0.0],
+            },
+            Self::LatchRelease => MechanicalActionProfile {
+                duration: 0.22,
+                friction_gain: 0.06,
+                friction_cycles: 1.0,
+                body_gain: 0.12,
+                body_attack: 0.0007,
+                body_decay: 21.0,
+                contact_count: 1,
+                contact_gain: 0.48,
+                contact_duration: 0.018,
+                contact_decay: 52.0,
+                contact_positions: [0.64, 0.0, 0.0, 0.0],
+            },
+            Self::LockTurn => MechanicalActionProfile {
+                duration: 0.62,
+                friction_gain: 0.32,
+                friction_cycles: 2.4,
+                body_gain: 0.18,
+                body_attack: 0.008,
+                body_decay: 8.0,
+                contact_count: 3,
+                contact_gain: 0.22,
+                contact_duration: 0.022,
+                contact_decay: 42.0,
+                contact_positions: [0.18, 0.52, 0.86, 0.0],
+            },
+            Self::Crank => MechanicalActionProfile {
+                duration: 1.0,
+                friction_gain: 0.54,
+                friction_cycles: 7.0,
+                body_gain: 0.16,
+                body_attack: 0.018,
+                body_decay: 4.8,
+                contact_count: 3,
+                contact_gain: 0.16,
+                contact_duration: 0.026,
+                contact_decay: 34.0,
+                contact_positions: [0.12, 0.50, 0.88, 0.0],
+            },
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::HingeOpen => 0,
+            Self::HingeClose => 1,
+            Self::LatchEngage => 2,
+            Self::LatchRelease => 3,
+            Self::LockTurn => 4,
+            Self::Crank => 5,
+        }
+    }
+}
+
+/// Configuration for one deterministic mechanical-action sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MechanicalActionConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Applied operating force, 0.0..=1.0.
+    pub force: f32,
+    /// Relative mechanism weight, 0.0..=1.0. Higher values lower the resonant body.
+    pub weight: f32,
+    /// Action speed, 0.0..=1.0. Higher values shorten movement and tighten contacts.
+    pub speed: f32,
+    /// Dominant material character of the fixture or mechanism.
+    pub material: MechanicalActionMaterial,
+    /// Mechanical action to render.
+    pub kind: MechanicalActionKind,
+}
+
+impl Default for MechanicalActionConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.76,
+            force: 0.55,
+            weight: 0.6,
+            speed: 0.42,
+            material: MechanicalActionMaterial::Metal,
+            kind: MechanicalActionKind::LatchEngage,
+        }
+    }
+}
+
+/// Finite deterministic generator for hinge, latch, lock, and crank sounds.
+///
+/// Friction, resonant body, and contact events are selected from the action and material profiles.
+/// Up to four contacts are prepared at construction in fixed-capacity storage. These are generic
+/// sound-design cues, not simulations of real hardware or particular doors and locks; use
+/// host-provided recordings for recognizable machinery.
+pub struct MechanicalActionGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    force_gain: f32,
+    position: u32,
+    total: u32,
+    noise_rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    low_noise_gain: f32,
+    high_noise_gain: f32,
+    friction_gain: f32,
+    friction_cycles: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    contacts: [MechanicalActionContact; MECHANICAL_ACTION_CONTACTS],
+}
+
+impl MechanicalActionGenerator {
+    /// Construct one deterministic mechanical-action sound with independent random streams.
+    pub fn new(config: MechanicalActionConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.force)?;
+        validate_unit(config.weight)?;
+        validate_unit(config.speed)?;
+
+        let profile = config.kind.profile();
+        let (material_frequency, noise_coefficient, low_noise_gain, high_noise_gain, damping) =
+            config.material.profile();
+        let sample_rate = config.sample_rate as f32;
+        let duration_scale = (1.20 - config.speed * 0.38) * (1.03 - config.weight * 0.07);
+        let total = (sample_rate * profile.duration * duration_scale) as u32;
+        let weight_pitch = 1.23 - config.weight * 0.40;
+        let speed_pitch = 0.94 + config.speed * 0.12;
+        let body_start_frequency =
+            (material_frequency * weight_pitch * speed_pitch).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (body_start_frequency * (0.78 + config.speed * 0.14)).min(sample_rate * 0.40);
+        let stream_index = config.kind.stream_index();
+
+        let noise_rng = Rng::new(derive_seed(seed, 0x4D41_4E4F, stream_index));
+        let mut phase_rng = Rng::new(derive_seed(seed, 0x4D41_5048, stream_index));
+        let mut contact_rng = Rng::new(derive_seed(seed, 0x4D41_434F, stream_index));
+        let body_phase = phase_rng.next_f32();
+        let force_gain = 0.45 + config.force * 0.78;
+
+        let contact_window = total as f32 * (0.78 + config.speed * 0.16);
+        let contact_duration =
+            (sample_rate * profile.contact_duration * (1.08 - config.speed * 0.18)) as u32;
+        let contacts: [MechanicalActionContact; MECHANICAL_ACTION_CONTACTS] =
+            std::array::from_fn(|index| {
+                if index >= profile.contact_count {
+                    return MechanicalActionContact {
+                        start_frame: total,
+                        duration_frames: 0,
+                        amplitude: 0.0,
+                        phase: 0.0,
+                        phase_step: 0.0,
+                        decay: 1.0,
+                    };
+                }
+
+                let jitter = (contact_rng.next_f32() - 0.5) * 0.028;
+                let progress = (profile.contact_positions[index] + jitter).clamp(0.015, 0.98);
+                let start_frame = (contact_window * progress) as u32;
+                let frequency =
+                    (material_frequency * weight_pitch * (0.72 + contact_rng.next_f32() * 0.70))
+                        .min(sample_rate * 0.40);
+                let amplitude = profile.contact_gain
+                    * (0.72 + config.force * 0.56)
+                    * (0.76 + config.weight * 0.40)
+                    * (0.72 + contact_rng.next_f32() * 0.56);
+                MechanicalActionContact {
+                    start_frame,
+                    duration_frames: contact_duration,
+                    amplitude,
+                    phase: contact_rng.next_f32(),
+                    phase_step: frequency / sample_rate,
+                    decay: profile.contact_decay * damping * (0.80 + contact_rng.next_f32() * 0.40),
+                }
+            });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            force_gain,
+            position: 0,
+            total,
+            noise_rng,
+            noise_state: 0.0,
+            noise_coefficient,
+            low_noise_gain,
+            high_noise_gain,
+            friction_gain: profile.friction_gain * (0.78 + config.force * 0.46),
+            friction_cycles: profile.friction_cycles * (0.76 + config.speed * 0.48),
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack: profile.body_attack,
+            body_decay: profile.body_decay * damping,
+            body_gain: profile.body_gain * (0.78 + config.weight * 0.42),
+            contacts,
+        })
+    }
+}
+
+impl ProceduralGenerator for MechanicalActionGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let high_noise = noise - self.noise_state;
+            let action_envelope = (TAU * progress * 0.5).sin();
+            let stroke_phase = progress * self.friction_cycles;
+            let stroke_envelope = 0.50 + 0.50 * (TAU * stroke_phase).sin().abs();
             let friction = (self.noise_state * self.low_noise_gain
                 + high_noise * self.high_noise_gain)
                 * self.friction_gain
@@ -3398,6 +4118,484 @@ mod tests {
             generator.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
         );
+    }
+
+    #[test]
+    fn character_vocalizations_are_deterministic_across_blocks_and_finish_cleanly() {
+        for kind in [
+            CharacterVocalizationKind::Inhale,
+            CharacterVocalizationKind::Exhale,
+            CharacterVocalizationKind::Exertion,
+            CharacterVocalizationKind::Pain,
+            CharacterVocalizationKind::DeathGroan,
+        ] {
+            let config = CharacterVocalizationConfig {
+                kind,
+                ..CharacterVocalizationConfig::default()
+            };
+            let mut whole = CharacterVocalizationGenerator::new(config, 0xC0FFEE).unwrap();
+            let mut split = CharacterVocalizationGenerator::new(config, 0xC0FFEE).unwrap();
+            let expected = render(&mut whole, 60_000);
+            let mut actual = render(&mut split, 257);
+            actual.extend(render(&mut split, 8_192));
+            actual.extend(render(&mut split, 51_551));
+            assert_eq!(expected, actual);
+            bounded(&expected);
+            assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+            assert!(whole.is_finished());
+            assert!(split.is_finished());
+            let silence = render(&mut split, 128);
+            assert!(silence.iter().all(|sample| *sample == 0.0));
+        }
+    }
+
+    #[test]
+    fn character_vocalization_kinds_have_distinct_profiles() {
+        let kinds = [
+            CharacterVocalizationKind::Inhale,
+            CharacterVocalizationKind::Exhale,
+            CharacterVocalizationKind::Exertion,
+            CharacterVocalizationKind::Pain,
+            CharacterVocalizationKind::DeathGroan,
+        ];
+        let outputs: Vec<Vec<f32>> = kinds
+            .into_iter()
+            .map(|kind| {
+                let mut generator = CharacterVocalizationGenerator::new(
+                    CharacterVocalizationConfig {
+                        kind,
+                        ..CharacterVocalizationConfig::default()
+                    },
+                    77,
+                )
+                .unwrap();
+                let samples = render(&mut generator, 60_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        for (index, output) in outputs.iter().enumerate() {
+            for other in outputs.iter().skip(index + 1) {
+                assert_ne!(output, other);
+            }
+        }
+    }
+
+    #[test]
+    fn character_vocalization_seed_and_controls_are_effective() {
+        let config = CharacterVocalizationConfig::default();
+        let mut first = CharacterVocalizationGenerator::new(config, 12).unwrap();
+        let mut same = CharacterVocalizationGenerator::new(config, 12).unwrap();
+        let mut other_seed = CharacterVocalizationGenerator::new(config, 13).unwrap();
+        let first_pcm = render(&mut first, 24_000);
+        assert_eq!(first_pcm, render(&mut same, 24_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 24_000));
+
+        let mut low_pitch = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                pitch_hz: 90.0,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        let mut high_pitch = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                pitch_hz: 260.0,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut low_pitch, 24_000));
+        assert_ne!(first_pcm, render(&mut high_pitch, 24_000));
+
+        let mut dry = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                breathiness: 0.05,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        let mut breathy = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                breathiness: 0.95,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        assert_ne!(render(&mut dry, 24_000), render(&mut breathy, 24_000));
+
+        let mut low_effort = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                effort: 0.1,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        let mut high_effort = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                effort: 0.95,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        assert_ne!(
+            render(&mut low_effort, 24_000),
+            render(&mut high_effort, 24_000)
+        );
+
+        let mut light = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                weight: 0.1,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        let mut heavy = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                weight: 0.95,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        assert_ne!(render(&mut light, 24_000), render(&mut heavy, 24_000));
+
+        let mut quiet = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                intensity: 0.2,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        let mut loud = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                intensity: 0.9,
+                ..config
+            },
+            12,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
+    }
+
+    #[test]
+    fn character_vocalization_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            CharacterVocalizationGenerator::new(
+                CharacterVocalizationConfig {
+                    pitch_hz: f32::NAN,
+                    ..CharacterVocalizationConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            CharacterVocalizationGenerator::new(
+                CharacterVocalizationConfig {
+                    pitch_hz: 401.0,
+                    ..CharacterVocalizationConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            CharacterVocalizationGenerator::new(
+                CharacterVocalizationConfig {
+                    breathiness: -0.1,
+                    ..CharacterVocalizationConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            CharacterVocalizationGenerator::new(
+                CharacterVocalizationConfig {
+                    sample_rate: 1_000,
+                    ..CharacterVocalizationConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        let mut generator =
+            CharacterVocalizationGenerator::new(CharacterVocalizationConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+    #[test]
+    fn mechanical_actions_are_deterministic_across_blocks_and_finish_cleanly() {
+        let config = MechanicalActionConfig {
+            kind: MechanicalActionKind::Crank,
+            ..MechanicalActionConfig::default()
+        };
+        let mut whole = MechanicalActionGenerator::new(config, 0x4D41).unwrap();
+        let mut split = MechanicalActionGenerator::new(config, 0x4D41).unwrap();
+        let expected = render(&mut whole, 60_000);
+        let mut actual = render(&mut split, 431);
+        actual.extend(render(&mut split, 8_192));
+        actual.extend(render(&mut split, 51_377));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+        assert!(whole.is_finished());
+        assert!(split.is_finished());
+        let silence = render(&mut split, 128);
+        assert!(silence.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn mechanical_action_kinds_and_materials_have_distinct_profiles() {
+        let base = MechanicalActionConfig::default();
+        let kinds = [
+            MechanicalActionKind::HingeOpen,
+            MechanicalActionKind::HingeClose,
+            MechanicalActionKind::LatchEngage,
+            MechanicalActionKind::LatchRelease,
+            MechanicalActionKind::LockTurn,
+            MechanicalActionKind::Crank,
+        ];
+        let outputs: Vec<Vec<f32>> = kinds
+            .into_iter()
+            .map(|kind| {
+                let mut generator =
+                    MechanicalActionGenerator::new(MechanicalActionConfig { kind, ..base }, 88)
+                        .unwrap();
+                let samples = render(&mut generator, 60_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        for (index, output) in outputs.iter().enumerate() {
+            for other in outputs.iter().skip(index + 1) {
+                assert_ne!(output, other);
+            }
+        }
+
+        let materials = [
+            MechanicalActionMaterial::Wood,
+            MechanicalActionMaterial::Metal,
+            MechanicalActionMaterial::Stone,
+        ];
+        let material_outputs: Vec<Vec<f32>> = materials
+            .into_iter()
+            .map(|material| {
+                let mut generator = MechanicalActionGenerator::new(
+                    MechanicalActionConfig {
+                        material,
+                        kind: MechanicalActionKind::HingeClose,
+                        ..base
+                    },
+                    89,
+                )
+                .unwrap();
+                let samples = render(&mut generator, 40_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        assert_ne!(material_outputs[0], material_outputs[1]);
+        assert_ne!(material_outputs[0], material_outputs[2]);
+        assert_ne!(material_outputs[1], material_outputs[2]);
+    }
+
+    #[test]
+    fn mechanical_action_seed_and_controls_are_effective() {
+        let config = MechanicalActionConfig::default();
+        let mut first = MechanicalActionGenerator::new(config, 3).unwrap();
+        let mut same = MechanicalActionGenerator::new(config, 3).unwrap();
+        let mut other_seed = MechanicalActionGenerator::new(config, 4).unwrap();
+        let first_pcm = render(&mut first, 24_000);
+        assert_eq!(first_pcm, render(&mut same, 24_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 24_000));
+
+        let mut soft = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                force: 0.1,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        let mut forceful = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                force: 0.95,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut soft, 24_000));
+        assert_ne!(first_pcm, render(&mut forceful, 24_000));
+
+        let mut slow = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                speed: 0.1,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        let mut fast = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                speed: 0.95,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
+
+        let mut light = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                weight: 0.1,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        let mut heavy = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                weight: 0.95,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        assert_ne!(render(&mut light, 24_000), render(&mut heavy, 24_000));
+
+        let mut quiet = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                intensity: 0.2,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        let mut loud = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                intensity: 0.9,
+                ..config
+            },
+            3,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
+    }
+
+    #[test]
+    fn mechanical_action_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            MechanicalActionGenerator::new(
+                MechanicalActionConfig {
+                    sample_rate: 1_000,
+                    ..MechanicalActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            MechanicalActionGenerator::new(
+                MechanicalActionConfig {
+                    force: f32::NAN,
+                    ..MechanicalActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            MechanicalActionGenerator::new(
+                MechanicalActionConfig {
+                    speed: 1.1,
+                    ..MechanicalActionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator =
+            MechanicalActionGenerator::new(MechanicalActionConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+    #[test]
+    fn weapon_impact_specialized_contacts_have_distinct_bounded_profiles() {
+        let base = WeaponImpactConfig::default();
+        let kinds = [
+            WeaponImpactKind::ShieldBash,
+            WeaponImpactKind::ArmorStrike,
+            WeaponImpactKind::ProjectileDeflection,
+        ];
+        let outputs: Vec<Vec<f32>> = kinds
+            .into_iter()
+            .map(|kind| {
+                let mut generator =
+                    WeaponImpactGenerator::new(WeaponImpactConfig { kind, ..base }, 0xB017)
+                        .unwrap();
+                let samples = render(&mut generator, 24_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        assert_ne!(outputs[0], outputs[1]);
+        assert_ne!(outputs[0], outputs[2]);
+        assert_ne!(outputs[1], outputs[2]);
+    }
+
+    #[test]
+    fn blunt_damage_effect_is_distinct_and_bounded() {
+        let base = DamageEffectConfig::default();
+        let mut splatter = DamageEffectGenerator::new(
+            DamageEffectConfig {
+                kind: DamageEffectKind::BloodSplatter,
+                ..base
+            },
+            0xDA6E,
+        )
+        .unwrap();
+        let mut fracture = DamageEffectGenerator::new(
+            DamageEffectConfig {
+                kind: DamageEffectKind::BoneBreak,
+                ..base
+            },
+            0xDA6E,
+        )
+        .unwrap();
+        let mut blunt = DamageEffectGenerator::new(
+            DamageEffectConfig {
+                kind: DamageEffectKind::BluntTrauma,
+                ..base
+            },
+            0xDA6E,
+        )
+        .unwrap();
+        let a = render(&mut splatter, 24_000);
+        let b = render(&mut fracture, 24_000);
+        let c = render(&mut blunt, 24_000);
+        bounded(&a);
+        bounded(&b);
+        bounded(&c);
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(b, c);
     }
 
     #[test]
