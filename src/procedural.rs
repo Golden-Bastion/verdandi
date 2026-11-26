@@ -1833,7 +1833,6 @@ impl ProceduralGenerator for EquipmentMovementGenerator {
     }
 }
 
-
 const OBJECT_INTERACTION_EVENTS: usize = 4;
 
 #[derive(Clone, Copy)]
@@ -2095,10 +2094,9 @@ impl ObjectInteractionGenerator {
                 let jitter = (event_rng.next_f32() - 0.5) * 0.025;
                 let progress = (profile.event_positions[index] + jitter).clamp(0.02, 0.97);
                 let start_frame = (total as f32 * progress) as u32;
-                let frequency = (material_frequency
-                    * weight_pitch
-                    * (0.68 + event_rng.next_f32() * 0.85))
-                    .min(sample_rate * 0.40);
+                let frequency =
+                    (material_frequency * weight_pitch * (0.68 + event_rng.next_f32() * 0.85))
+                        .min(sample_rate * 0.40);
                 let amplitude = profile.event_gain
                     * material_texture
                     * (0.72 + config.weight * 0.44)
@@ -2120,9 +2118,7 @@ impl ObjectInteractionGenerator {
             total,
             noise_rng,
             noise_state: 0.0,
-            noise_gain: profile.noise_gain
-                * material_texture
-                * (0.82 + config.speed * 0.35),
+            noise_gain: profile.noise_gain * material_texture * (0.82 + config.speed * 0.35),
             noise_coefficient,
             body_phase,
             body_start_frequency,
@@ -2150,8 +2146,8 @@ impl ProceduralGenerator for ObjectInteractionGenerator {
             let progress = self.position as f32 / self.total as f32;
             let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
             self.noise_state += self.noise_coefficient * (noise - self.noise_state);
-            let texture = (noise - self.noise_state) * self.noise_gain
-                * (TAU * progress * 0.5).sin();
+            let texture =
+                (noise - self.noise_state) * self.noise_gain * (TAU * progress * 0.5).sin();
 
             let attack = 1.0 - (-elapsed / self.body_attack).exp();
             let body_envelope = attack * (-elapsed * self.body_decay).exp();
@@ -2191,7 +2187,6 @@ mod tests {
     fn bounded(samples: &[f32]) {
         assert!(samples.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
     }
-
 
     #[test]
     fn object_interactions_are_deterministic_across_blocks_and_finish_cleanly() {
@@ -2281,12 +2276,18 @@ mod tests {
         assert_ne!(first_pcm, render(&mut other_seed, 24_000));
 
         let mut light = ObjectInteractionGenerator::new(
-            ObjectInteractionConfig { weight: 0.1, ..config },
+            ObjectInteractionConfig {
+                weight: 0.1,
+                ..config
+            },
             7,
         )
         .unwrap();
         let mut heavy = ObjectInteractionGenerator::new(
-            ObjectInteractionConfig { weight: 0.95, ..config },
+            ObjectInteractionConfig {
+                weight: 0.95,
+                ..config
+            },
             7,
         )
         .unwrap();
@@ -2294,24 +2295,36 @@ mod tests {
         assert_ne!(first_pcm, render(&mut heavy, 24_000));
 
         let mut slow = ObjectInteractionGenerator::new(
-            ObjectInteractionConfig { speed: 0.1, ..config },
+            ObjectInteractionConfig {
+                speed: 0.1,
+                ..config
+            },
             7,
         )
         .unwrap();
         let mut fast = ObjectInteractionGenerator::new(
-            ObjectInteractionConfig { speed: 0.95, ..config },
+            ObjectInteractionConfig {
+                speed: 0.95,
+                ..config
+            },
             7,
         )
         .unwrap();
         assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
 
         let mut quiet = ObjectInteractionGenerator::new(
-            ObjectInteractionConfig { intensity: 0.2, ..config },
+            ObjectInteractionConfig {
+                intensity: 0.2,
+                ..config
+            },
             7,
         )
         .unwrap();
         let mut loud = ObjectInteractionGenerator::new(
-            ObjectInteractionConfig { intensity: 0.9, ..config },
+            ObjectInteractionConfig {
+                intensity: 0.9,
+                ..config
+            },
             7,
         )
         .unwrap();
