@@ -1102,7 +1102,6 @@ impl ProceduralGenerator for CharacterActionGenerator {
     }
 }
 
-
 const WEAPON_HANDLING_EVENTS: usize = 4;
 
 #[derive(Clone, Copy)]
@@ -1267,42 +1266,38 @@ impl WeaponHandlingGenerator {
             (body_start_frequency * (0.78 + config.speed * 0.16)).min(sample_rate * 0.40);
         let body_phase = rng.next_f32();
 
-        let event_duration =
-            (sample_rate * (0.020 + (1.0 - config.speed) * 0.018)) as u32;
+        let event_duration = (sample_rate * (0.020 + (1.0 - config.speed) * 0.018)) as u32;
         let event_positions = config.kind.event_positions();
-        let events: [WeaponHandlingEvent; WEAPON_HANDLING_EVENTS] =
-            std::array::from_fn(|index| {
-                if index >= event_count {
-                    return WeaponHandlingEvent {
-                        start_frame: total,
-                        duration_frames: 0,
-                        amplitude: 0.0,
-                        phase: 0.0,
-                        phase_step: 0.0,
-                        decay: 1.0,
-                    };
-                }
+        let events: [WeaponHandlingEvent; WEAPON_HANDLING_EVENTS] = std::array::from_fn(|index| {
+            if index >= event_count {
+                return WeaponHandlingEvent {
+                    start_frame: total,
+                    duration_frames: 0,
+                    amplitude: 0.0,
+                    phase: 0.0,
+                    phase_step: 0.0,
+                    decay: 1.0,
+                };
+            }
 
-                let jitter = (rng.next_f32() - 0.5) * 0.025;
-                let progress = (event_positions[index] + jitter).clamp(0.025, 0.975);
-                let start_frame = (total as f32 * progress) as u32;
-                let frequency = (material_frequency
-                    * (0.72 + rng.next_f32() * 0.88)
-                    * weight_pitch)
-                    .min(sample_rate * 0.40);
-                let amplitude = event_gain
-                    * material_texture
-                    * (0.68 + rng.next_f32() * 0.64)
-                    * (0.82 + config.weight * 0.36);
-                WeaponHandlingEvent {
-                    start_frame,
-                    duration_frames: event_duration,
-                    amplitude,
-                    phase: rng.next_f32(),
-                    phase_step: frequency / sample_rate,
-                    decay: material_decay * (0.78 + rng.next_f32() * 0.44),
-                }
-            });
+            let jitter = (rng.next_f32() - 0.5) * 0.025;
+            let progress = (event_positions[index] + jitter).clamp(0.025, 0.975);
+            let start_frame = (total as f32 * progress) as u32;
+            let frequency = (material_frequency * (0.72 + rng.next_f32() * 0.88) * weight_pitch)
+                .min(sample_rate * 0.40);
+            let amplitude = event_gain
+                * material_texture
+                * (0.68 + rng.next_f32() * 0.64)
+                * (0.82 + config.weight * 0.36);
+            WeaponHandlingEvent {
+                start_frame,
+                duration_frames: event_duration,
+                amplitude,
+                phase: rng.next_f32(),
+                phase_step: frequency / sample_rate,
+                decay: material_decay * (0.78 + rng.next_f32() * 0.44),
+            }
+        });
 
         Ok(Self {
             sample_rate,
@@ -1340,8 +1335,7 @@ impl ProceduralGenerator for WeaponHandlingGenerator {
             let noise = self.rng.next_f32() * 2.0 - 1.0;
             self.noise_state += self.noise_coefficient * (noise - self.noise_state);
             let movement_envelope = (TAU * progress * 0.5).sin();
-            let movement =
-                (noise - self.noise_state) * movement_envelope * self.movement_gain;
+            let movement = (noise - self.noise_state) * movement_envelope * self.movement_gain;
             let body_attack = 1.0 - (-elapsed / self.body_attack).exp();
             let body_envelope = body_attack * (-elapsed * self.body_decay).exp();
             let body_frequency = self.body_start_frequency
@@ -1357,8 +1351,7 @@ impl ProceduralGenerator for WeaponHandlingGenerator {
             frame[0] = sample;
             frame[1] = sample;
 
-            self.body_phase =
-                (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
             self.position += 1;
         }
 
@@ -2071,14 +2064,8 @@ mod tests {
         assert_ne!(first_pcm, render(&mut lighter, 32_000));
         assert_ne!(first_pcm, render(&mut heavier, 32_000));
 
-        let mut slower = WeaponHandlingGenerator::new(
-            WeaponHandlingConfig {
-                speed: 0.1,
-                ..base
-            },
-            5,
-        )
-        .unwrap();
+        let mut slower =
+            WeaponHandlingGenerator::new(WeaponHandlingConfig { speed: 0.1, ..base }, 5).unwrap();
         let mut faster = WeaponHandlingGenerator::new(
             WeaponHandlingConfig {
                 speed: 0.95,
