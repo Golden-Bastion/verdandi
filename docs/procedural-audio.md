@@ -1,6 +1,6 @@
 # Procedural sound generation
 
-Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, footsteps, generic impacts, weapon-contact sounds, material-specific breakage, and non-vocal character movement effects; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
+Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, footsteps, generic impacts, weapon-contact sounds, material-specific breakage, non-vocal character movement effects, and weapon draw/sheathe/reload handling; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
 
 Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
 
@@ -131,6 +131,36 @@ fn make_landing(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>>
 A jump produces a short rising movement burst, a landing emphasizes a weighted body impact, and a fall uses a longer movement texture with a fixed number of secondary impacts. These are stylized effects rather than physical body simulations. Use host-provided or sampled audio when a specific character identity or convincing vocal performance is required.
 
 
+## Generating weapon-handling sounds
+
+Use \`WeaponHandlingGenerator\` for generic draw, sheathe, and reload sounds. The dominant material profile can be metal, wood, or leather. \`weight\` shifts the resonant body toward heavier or lighter equipment, while \`speed\` changes the action duration and tightness of its contact sequence. The seed provides repeatable variation.
+
+\`\`\`rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, ProceduralGenerator, WeaponHandlingConfig, WeaponHandlingGenerator,
+    WeaponHandlingKind, WeaponHandlingMaterial,
+};
+
+fn make_weapon_draw(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = WeaponHandlingConfig {
+        sample_rate: 48_000,
+        intensity: 0.8,
+        weight: 0.7,
+        speed: 0.6,
+        material: WeaponHandlingMaterial::Metal,
+        kind: WeaponHandlingKind::Draw,
+    };
+    let mut generator = WeaponHandlingGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 7) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+\`\`\`
+
+These profiles are intentionally generic. A consuming game may select a material profile and seed from its own weapon data, or use recorded assets where a particular weapon mechanism needs a distinctive identity. Verdandi does not infer weapon classes or own the host's gameplay state. The generator prepares its small contact sequence at construction and does not allocate while rendering.
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.
@@ -169,11 +199,11 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `WeaponImpactGenerator` | Finite | intensity, force, material (including shield), contact kind (including projectile impact) |
 | `BreakageGenerator` | Finite | intensity, force, size, material |
 | `CharacterActionGenerator` | Finite | intensity, force, weight, action kind |
-| `CharacterActionGenerator` | Finite | intensity, force, weight, action kind |
+| `WeaponHandlingGenerator` | Finite | intensity, weight, speed, material, handling kind |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include weapon handling, vocal pain/exertion and death sounds, blood-splatter effects, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include vocal pain/exertion and death sounds, blood-splatter effects, bone breaks, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
 
 
 ## Application independence
