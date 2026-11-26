@@ -1,6 +1,6 @@
 # Procedural sound generation
 
-Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, generic and surface-specific footsteps, generic impacts, weapon-contact sounds, material-specific breakage, non-vocal character movement effects, and weapon draw/sheathe/reload handling; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
+Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, generic and surface-specific footsteps, generic impacts, weapon-contact sounds, material-specific breakage, non-vocal character movement effects, weapon draw/sheathe/reload handling, and cloth/gear/armor movement; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
 
 Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
 
@@ -186,6 +186,36 @@ fn make_weapon_draw(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Err
 
 These profiles are intentionally generic. A consuming game may select a material profile and seed from its own weapon data, or use recorded assets where a particular weapon mechanism needs a distinctive identity. Verdandi does not infer weapon classes or own the host's gameplay state. The generator prepares its small contact sequence at construction and does not allocate while rendering.
 
+
+## Generating equipment-movement sounds
+
+Use `EquipmentMovementGenerator` for short movement sounds from clothing and carried equipment. `EquipmentMovementKind` offers three broad profiles: `ClothRustle`, `GearJostle`, and `ArmorRattle`. The `weight` control shifts the resonant body, while `activity` controls movement energy and timing. The seed provides repeatable variation.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, EquipmentMovementConfig, EquipmentMovementGenerator, EquipmentMovementKind,
+    ProceduralGenerator,
+};
+
+fn make_armor_rattle(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = EquipmentMovementConfig {
+        sample_rate: 48_000,
+        intensity: 0.75,
+        weight: 0.8,
+        activity: 0.7,
+        kind: EquipmentMovementKind::ArmorRattle,
+    };
+    let mut generator = EquipmentMovementGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 5) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+These are stylized movement textures, not simulations of particular clothing, armor construction, or equipment attachment points. The host decides when the sound occurs and which profile best fits its equipment. Use supplied recordings where a specific outfit or gear set needs a recognizable identity.
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.
@@ -225,6 +255,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `BreakageGenerator` | Finite | intensity, force, size, material |
 | `CharacterActionGenerator` | Finite | intensity, force, weight, action kind |
 | `WeaponHandlingGenerator` | Finite | intensity, weight, speed, material, handling kind |
+| `EquipmentMovementGenerator` | Finite | intensity, weight, activity, movement kind |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
