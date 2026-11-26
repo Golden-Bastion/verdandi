@@ -2176,6 +2176,301 @@ impl ProceduralGenerator for ObjectInteractionGenerator {
     }
 }
 
+
+const DAMAGE_EFFECT_EVENTS: usize = 8;
+
+#[derive(Clone, Copy)]
+struct DamageEffectEvent {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl DamageEffectEvent {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Stylized non-vocal damage sound represented by a procedural one-shot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DamageEffectKind {
+    /// A wet, broadband splash followed by a small sequence of droplets.
+    BloodSplatter,
+    /// A sharp dry fracture with several short secondary cracks.
+    BoneBreak,
+}
+
+#[derive(Clone, Copy)]
+struct DamageEffectProfile {
+    duration: f32,
+    noise_coefficient: f32,
+    low_noise_gain: f32,
+    high_noise_gain: f32,
+    noise_decay: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    event_count: usize,
+    event_gain: f32,
+    event_duration: f32,
+    event_decay: f32,
+    event_positions: [f32; DAMAGE_EFFECT_EVENTS],
+}
+
+impl DamageEffectKind {
+    fn profile(self) -> DamageEffectProfile {
+        match self {
+            Self::BloodSplatter => DamageEffectProfile {
+                duration: 0.52,
+                noise_coefficient: 0.18,
+                low_noise_gain: 0.48,
+                high_noise_gain: 0.17,
+                noise_decay: 7.5,
+                body_start_frequency: 118.0,
+                body_end_frequency: 82.0,
+                body_attack: 0.004,
+                body_decay: 8.0,
+                body_gain: 0.14,
+                event_count: 7,
+                event_gain: 0.12,
+                event_duration: 0.034,
+                event_decay: 46.0,
+                event_positions: [0.05, 0.16, 0.29, 0.43, 0.59, 0.76, 0.91, 0.0],
+            },
+            Self::BoneBreak => DamageEffectProfile {
+                duration: 0.42,
+                noise_coefficient: 0.76,
+                low_noise_gain: 0.08,
+                high_noise_gain: 0.72,
+                noise_decay: 18.0,
+                body_start_frequency: 760.0,
+                body_end_frequency: 310.0,
+                body_attack: 0.0006,
+                body_decay: 15.0,
+                body_gain: 0.38,
+                event_count: 6,
+                event_gain: 0.17,
+                event_duration: 0.022,
+                event_decay: 62.0,
+                event_positions: [0.02, 0.11, 0.23, 0.39, 0.63, 0.84, 0.0, 0.0],
+            },
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::BloodSplatter => 0,
+            Self::BoneBreak => 1,
+        }
+    }
+}
+
+/// Configuration for one deterministic non-vocal damage effect.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DamageEffectConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Impact strength, 0.0..=1.0.
+    pub force: f32,
+    /// Relative scale of the effect, 0.0..=1.0. Larger values broaden the sound and lower resonance.
+    pub size: f32,
+    /// Damage sound to render.
+    pub kind: DamageEffectKind,
+}
+
+impl Default for DamageEffectConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.72,
+            force: 0.65,
+            size: 0.45,
+            kind: DamageEffectKind::BloodSplatter,
+        }
+    }
+}
+
+/// Finite deterministic generator for stylized blood-splatter and bone-break effects.
+///
+/// The two profiles share a bounded one-shot renderer but use different noise, resonance, and
+/// contact-event balances. Force controls event energy; size changes duration, resonance, and
+/// event spread. Seeded events are prepared at construction in fixed-capacity storage, with
+/// independent streams for noise, phase, and secondary contacts. These are non-vocal sound-design
+/// textures, not anatomical simulations or substitutes for recorded character performances.
+pub struct DamageEffectGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    force_gain: f32,
+    position: u32,
+    total: u32,
+    noise_rng: Rng,
+    noise_state: f32,
+    noise_coefficient: f32,
+    low_noise_gain: f32,
+    high_noise_gain: f32,
+    noise_decay: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    events: [DamageEffectEvent; DAMAGE_EFFECT_EVENTS],
+}
+
+impl DamageEffectGenerator {
+    /// Construct one deterministic damage effect with independent random streams.
+    pub fn new(config: DamageEffectConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.force)?;
+        validate_unit(config.size)?;
+
+        let profile = config.kind.profile();
+        let sample_rate = config.sample_rate as f32;
+        let size_scale = 0.68 + config.size * 0.64;
+        let total = (sample_rate * profile.duration * size_scale) as u32;
+        let pitch_scale = 1.22 - config.size * 0.38;
+        let body_start_frequency =
+            (profile.body_start_frequency * pitch_scale).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (profile.body_end_frequency * pitch_scale).min(sample_rate * 0.40);
+        let stream_index = config.kind.stream_index();
+
+        let noise_rng = Rng::new(derive_seed(seed, 0x444D_4E4F, stream_index));
+        let mut phase_rng = Rng::new(derive_seed(seed, 0x444D_5048, stream_index));
+        let mut event_rng = Rng::new(derive_seed(seed, 0x444D_4556, stream_index));
+        let body_phase = phase_rng.next_f32();
+        let force_gain = 0.42 + config.force * 0.88;
+
+        let event_window = total as f32 * (0.72 + config.size * 0.22);
+        let event_duration =
+            (sample_rate * profile.event_duration * (0.84 + config.size * 0.32)) as u32;
+        let events: [DamageEffectEvent; DAMAGE_EFFECT_EVENTS] =
+            std::array::from_fn(|index| {
+                if index >= profile.event_count {
+                    return DamageEffectEvent {
+                        start_frame: total,
+                        duration_frames: 0,
+                        amplitude: 0.0,
+                        phase: 0.0,
+                        phase_step: 0.0,
+                        decay: 1.0,
+                    };
+                }
+
+                let jitter = (event_rng.next_f32() - 0.5) * 0.035;
+                let progress = (profile.event_positions[index] + jitter).clamp(0.01, 0.98);
+                let start_frame = (event_window * progress) as u32;
+                let frequency = (profile.body_start_frequency
+                    * pitch_scale
+                    * (0.70 + event_rng.next_f32() * 0.70))
+                    .min(sample_rate * 0.40);
+                let amplitude = profile.event_gain
+                    * (0.70 + config.force * 0.58)
+                    * (0.74 + config.size * 0.48)
+                    * (0.72 + event_rng.next_f32() * 0.56);
+                DamageEffectEvent {
+                    start_frame,
+                    duration_frames: event_duration,
+                    amplitude,
+                    phase: event_rng.next_f32(),
+                    phase_step: frequency / sample_rate,
+                    decay: profile.event_decay * (0.80 + event_rng.next_f32() * 0.40),
+                }
+            });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            force_gain,
+            position: 0,
+            total,
+            noise_rng,
+            noise_state: 0.0,
+            noise_coefficient: profile.noise_coefficient,
+            low_noise_gain: profile.low_noise_gain,
+            high_noise_gain: profile.high_noise_gain,
+            noise_decay: profile.noise_decay * (1.12 - config.size * 0.20),
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack: profile.body_attack,
+            body_decay: profile.body_decay * (1.08 - config.size * 0.16),
+            body_gain: profile.body_gain * (0.82 + config.size * 0.40),
+            events,
+        })
+    }
+}
+
+impl ProceduralGenerator for DamageEffectGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let high_noise = noise - self.noise_state;
+            let noise_envelope = (-elapsed * self.noise_decay).exp()
+                * (TAU * progress * 0.5).sin();
+            let texture = (self.noise_state * self.low_noise_gain
+                + high_noise * self.high_noise_gain)
+                * noise_envelope;
+
+            let attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body =
+                (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let contacts: f32 = self
+                .events
+                .iter()
+                .map(|event| event.sample(self.position, self.sample_rate))
+                .sum();
+
+            let sample =
+                ((texture + body + contacts) * self.intensity * self.force_gain).clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2375,6 +2670,144 @@ mod tests {
         ));
         let mut generator =
             ObjectInteractionGenerator::new(ObjectInteractionConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
+    }
+
+
+    #[test]
+    fn damage_effects_are_deterministic_across_blocks_and_finish_cleanly() {
+        for kind in [DamageEffectKind::BloodSplatter, DamageEffectKind::BoneBreak] {
+            let config = DamageEffectConfig { kind, ..DamageEffectConfig::default() };
+            let mut whole = DamageEffectGenerator::new(config, 0xDA6E).unwrap();
+            let mut split = DamageEffectGenerator::new(config, 0xDA6E).unwrap();
+            let expected = render(&mut whole, 48_000);
+            let mut actual = render(&mut split, 311);
+            actual.extend(render(&mut split, 8_192));
+            actual.extend(render(&mut split, 39_497));
+            assert_eq!(expected, actual);
+            bounded(&expected);
+            assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+            assert!(whole.is_finished());
+            assert!(split.is_finished());
+            let silence = render(&mut split, 128);
+            assert!(silence.iter().all(|sample| *sample == 0.0));
+        }
+    }
+
+    #[test]
+    fn damage_effect_kinds_have_distinct_bounded_profiles() {
+        let base = DamageEffectConfig::default();
+        let mut splatter = DamageEffectGenerator::new(
+            DamageEffectConfig { kind: DamageEffectKind::BloodSplatter, ..base },
+            61,
+        )
+        .unwrap();
+        let mut fracture = DamageEffectGenerator::new(
+            DamageEffectConfig { kind: DamageEffectKind::BoneBreak, ..base },
+            61,
+        )
+        .unwrap();
+        let splatter_pcm = render(&mut splatter, 32_000);
+        let fracture_pcm = render(&mut fracture, 32_000);
+        assert_ne!(splatter_pcm, fracture_pcm);
+        bounded(&splatter_pcm);
+        bounded(&fracture_pcm);
+    }
+
+    #[test]
+    fn damage_effect_seed_and_controls_are_effective() {
+        let config = DamageEffectConfig::default();
+        let mut first = DamageEffectGenerator::new(config, 17).unwrap();
+        let mut same = DamageEffectGenerator::new(config, 17).unwrap();
+        let mut other_seed = DamageEffectGenerator::new(config, 18).unwrap();
+        let first_pcm = render(&mut first, 24_000);
+        assert_eq!(first_pcm, render(&mut same, 24_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 24_000));
+
+        let mut light = DamageEffectGenerator::new(
+            DamageEffectConfig { force: 0.1, ..config },
+            17,
+        )
+        .unwrap();
+        let mut heavy = DamageEffectGenerator::new(
+            DamageEffectConfig { force: 0.95, ..config },
+            17,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut light, 24_000));
+        assert_ne!(first_pcm, render(&mut heavy, 24_000));
+
+        let mut small = DamageEffectGenerator::new(
+            DamageEffectConfig { size: 0.1, ..config },
+            17,
+        )
+        .unwrap();
+        let mut large = DamageEffectGenerator::new(
+            DamageEffectConfig { size: 0.95, ..config },
+            17,
+        )
+        .unwrap();
+        assert_ne!(render(&mut small, 24_000), render(&mut large, 24_000));
+
+        let mut quiet = DamageEffectGenerator::new(
+            DamageEffectConfig { intensity: 0.2, ..config },
+            17,
+        )
+        .unwrap();
+        let mut loud = DamageEffectGenerator::new(
+            DamageEffectConfig { intensity: 0.9, ..config },
+            17,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
+    }
+
+    #[test]
+    fn damage_effect_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            DamageEffectGenerator::new(
+                DamageEffectConfig {
+                    sample_rate: 1_000,
+                    ..DamageEffectConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            DamageEffectGenerator::new(
+                DamageEffectConfig {
+                    intensity: f32::NAN,
+                    ..DamageEffectConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            DamageEffectGenerator::new(
+                DamageEffectConfig {
+                    force: 1.1,
+                    ..DamageEffectConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            DamageEffectGenerator::new(
+                DamageEffectConfig {
+                    size: f32::INFINITY,
+                    ..DamageEffectConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator = DamageEffectGenerator::new(DamageEffectConfig::default(), 0).unwrap();
         assert_eq!(
             generator.render(&mut [0.0; 3]),
             Err(ProceduralError::OutputMustContainStereoFrames)
