@@ -1542,6 +1542,300 @@ impl ProceduralGenerator for WeaponHandlingGenerator {
     }
 }
 
+
+const EQUIPMENT_MOVEMENT_EVENTS: usize = 5;
+
+#[derive(Clone, Copy)]
+struct EquipmentMovementEvent {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl EquipmentMovementEvent {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Kind of equipment movement represented by a procedural one-shot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EquipmentMovementKind {
+    /// Soft cloth and fabric shifting with little hard contact.
+    ClothRustle,
+    /// Several restrained contacts from carried pouches, straps, and attached gear.
+    GearJostle,
+    /// A brighter sequence of contacts from linked or plate armor.
+    ArmorRattle,
+}
+
+#[derive(Clone, Copy)]
+struct EquipmentMovementProfile {
+    duration: f32,
+    noise_gain: f32,
+    noise_coefficient: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    event_count: usize,
+    event_gain: f32,
+}
+
+impl EquipmentMovementKind {
+    fn profile(self) -> EquipmentMovementProfile {
+        match self {
+            Self::ClothRustle => EquipmentMovementProfile {
+                duration: 0.42,
+                noise_gain: 0.70,
+                noise_coefficient: 0.44,
+                body_start_frequency: 205.0,
+                body_end_frequency: 158.0,
+                body_attack: 0.014,
+                body_decay: 8.5,
+                body_gain: 0.10,
+                event_count: 0,
+                event_gain: 0.0,
+            },
+            Self::GearJostle => EquipmentMovementProfile {
+                duration: 0.40,
+                noise_gain: 0.44,
+                noise_coefficient: 0.30,
+                body_start_frequency: 154.0,
+                body_end_frequency: 118.0,
+                body_attack: 0.008,
+                body_decay: 9.5,
+                body_gain: 0.23,
+                event_count: 3,
+                event_gain: 0.25,
+            },
+            Self::ArmorRattle => EquipmentMovementProfile {
+                duration: 0.46,
+                noise_gain: 0.30,
+                noise_coefficient: 0.16,
+                body_start_frequency: 238.0,
+                body_end_frequency: 188.0,
+                body_attack: 0.004,
+                body_decay: 7.0,
+                body_gain: 0.34,
+                event_count: 5,
+                event_gain: 0.31,
+            },
+        }
+    }
+
+    fn event_positions(self) -> [f32; EQUIPMENT_MOVEMENT_EVENTS] {
+        match self {
+            Self::ClothRustle => [0.0; EQUIPMENT_MOVEMENT_EVENTS],
+            Self::GearJostle => [0.12, 0.48, 0.86, 0.0, 0.0],
+            Self::ArmorRattle => [0.08, 0.27, 0.49, 0.71, 0.91],
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::ClothRustle => 0,
+            Self::GearJostle => 1,
+            Self::ArmorRattle => 2,
+        }
+    }
+}
+
+/// Configuration for one deterministic equipment-movement sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EquipmentMovementConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Relative equipment weight, 0.0..=1.0. Higher values lower its resonant body.
+    pub weight: f32,
+    /// Movement vigor, 0.0..=1.0. Higher values increase texture and contact energy.
+    pub activity: f32,
+    /// Movement sound to render.
+    pub kind: EquipmentMovementKind,
+}
+
+impl Default for EquipmentMovementConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.72,
+            weight: 0.55,
+            activity: 0.55,
+            kind: EquipmentMovementKind::GearJostle,
+        }
+    }
+}
+
+/// Finite deterministic generator for cloth rustle, carried-gear movement, and armor rattle.
+///
+/// The selected profile changes the balance between friction-like movement and hard contacts.
+/// Weight shifts the resonant body; activity controls movement energy and duration. Contact
+/// events are prepared at construction in a fixed-capacity array, using a random stream
+/// independent from the rendered noise. Output is stylized rather than a physical simulation.
+pub struct EquipmentMovementGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    noise_state: f32,
+    noise_gain: f32,
+    noise_coefficient: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    events: [EquipmentMovementEvent; EQUIPMENT_MOVEMENT_EVENTS],
+}
+
+impl EquipmentMovementGenerator {
+    /// Construct one deterministic equipment-movement sound with an independent random stream.
+    pub fn new(config: EquipmentMovementConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.weight)?;
+        validate_unit(config.activity)?;
+
+        let profile = config.kind.profile();
+        let sample_rate = config.sample_rate as f32;
+        let duration_scale = 1.18 - config.activity * 0.28;
+        let total = (sample_rate * profile.duration * duration_scale) as u32;
+        let weight_pitch = 1.22 - config.weight * 0.42;
+        let body_start_frequency =
+            (profile.body_start_frequency * weight_pitch).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (profile.body_end_frequency * weight_pitch).min(sample_rate * 0.40);
+
+        let stream_index = config.kind.stream_index();
+        let mut noise_rng = Rng::new(derive_seed(seed, 0x4551_4E4F, stream_index));
+        let mut phase_rng = Rng::new(derive_seed(seed, 0x4551_5048, stream_index));
+        let mut event_rng = Rng::new(derive_seed(seed, 0x4551_4556, stream_index));
+        let body_phase = phase_rng.next_f32();
+
+        let event_duration =
+            (sample_rate * (0.024 + config.activity * 0.016)) as u32;
+        let event_positions = config.kind.event_positions();
+        let events: [EquipmentMovementEvent; EQUIPMENT_MOVEMENT_EVENTS] =
+            std::array::from_fn(|index| {
+                if index >= profile.event_count {
+                    return EquipmentMovementEvent {
+                        start_frame: total,
+                        duration_frames: 0,
+                        amplitude: 0.0,
+                        phase: 0.0,
+                        phase_step: 0.0,
+                        decay: 1.0,
+                    };
+                }
+
+                let jitter = (event_rng.next_f32() - 0.5) * 0.035;
+                let progress = (event_positions[index] + jitter).clamp(0.025, 0.975);
+                let start_frame = (total as f32 * progress) as u32;
+                let frequency = (profile.body_start_frequency
+                    * weight_pitch
+                    * (0.72 + event_rng.next_f32() * 0.64))
+                    .min(sample_rate * 0.40);
+                let amplitude = profile.event_gain
+                    * (0.72 + config.activity * 0.56)
+                    * (0.78 + config.weight * 0.40)
+                    * (0.72 + event_rng.next_f32() * 0.56);
+                EquipmentMovementEvent {
+                    start_frame,
+                    duration_frames: event_duration,
+                    amplitude,
+                    phase: event_rng.next_f32(),
+                    phase_step: frequency / sample_rate,
+                    decay: 10.0 + event_rng.next_f32() * 9.0,
+                }
+            });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            position: 0,
+            total,
+            rng: noise_rng,
+            noise_state: 0.0,
+            noise_gain: profile.noise_gain * (0.66 + config.activity * 0.68),
+            noise_coefficient: profile.noise_coefficient,
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack: profile.body_attack,
+            body_decay: profile.body_decay * (1.08 - config.weight * 0.16),
+            body_gain: profile.body_gain * (0.78 + config.weight * 0.42),
+            events,
+        })
+    }
+}
+
+impl ProceduralGenerator for EquipmentMovementGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let high_frequency = noise - self.noise_state;
+            let texture = (high_frequency * (1.0 - self.noise_coefficient)
+                + self.noise_state * self.noise_coefficient)
+                * self.noise_gain
+                * (TAU * progress * 0.5).sin();
+
+            let attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let contacts: f32 = self
+                .events
+                .iter()
+                .map(|event| event.sample(self.position, self.sample_rate))
+                .sum();
+
+            let sample = (texture + body + contacts) * self.intensity;
+            let sample = sample.clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase =
+                (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1574,6 +1868,154 @@ mod tests {
         actual_rain.extend(render(&mut rain_split, 3072));
         assert_eq!(expected_rain, actual_rain);
         assert!(rain_samples.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+
+    #[test]
+    fn equipment_movement_is_deterministic_across_blocks_and_finishes_cleanly() {
+        let config = EquipmentMovementConfig::default();
+        let mut whole = EquipmentMovementGenerator::new(config, 0xE011).unwrap();
+        let mut split = EquipmentMovementGenerator::new(config, 0xE011).unwrap();
+        assert!(!whole.is_finished());
+        let expected = render(&mut whole, 30_000);
+        let mut actual = render(&mut split, 12_345);
+        actual.extend(render(&mut split, 17_655));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+
+        let total_frames =
+            (config.sample_rate as f32 * 0.40 * (1.18 - config.activity * 0.28)) as usize;
+        assert!(expected[total_frames * 2..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+    #[test]
+    fn equipment_movement_kinds_have_distinct_bounded_profiles() {
+        let base = EquipmentMovementConfig::default();
+        let kinds = [
+            EquipmentMovementKind::ClothRustle,
+            EquipmentMovementKind::GearJostle,
+            EquipmentMovementKind::ArmorRattle,
+        ];
+        let mut renders = Vec::new();
+
+        for kind in kinds {
+            let mut generator =
+                EquipmentMovementGenerator::new(EquipmentMovementConfig { kind, ..base }, 31)
+                    .unwrap();
+            let samples = render(&mut generator, 30_000);
+            bounded(&samples);
+            assert!(generator.is_finished());
+            assert!(samples.iter().any(|sample| sample.abs() > 0.001));
+            renders.push(samples);
+        }
+
+        assert_ne!(renders[0], renders[1]);
+        assert_ne!(renders[0], renders[2]);
+        assert_ne!(renders[1], renders[2]);
+    }
+
+    #[test]
+    fn equipment_movement_seed_weight_activity_and_intensity_are_effective() {
+        let base = EquipmentMovementConfig::default();
+        let mut first = EquipmentMovementGenerator::new(base, 9).unwrap();
+        let expected = render(&mut first, 24_000);
+        let mut same = EquipmentMovementGenerator::new(base, 9).unwrap();
+        let mut other_seed = EquipmentMovementGenerator::new(base, 10).unwrap();
+        assert_eq!(expected, render(&mut same, 24_000));
+        assert_ne!(expected, render(&mut other_seed, 24_000));
+
+        let mut light = EquipmentMovementGenerator::new(
+            EquipmentMovementConfig {
+                weight: 0.1,
+                ..base
+            },
+            9,
+        )
+        .unwrap();
+        let mut heavy = EquipmentMovementGenerator::new(
+            EquipmentMovementConfig {
+                weight: 0.95,
+                ..base
+            },
+            9,
+        )
+        .unwrap();
+        assert_ne!(expected, render(&mut light, 24_000));
+        assert_ne!(expected, render(&mut heavy, 24_000));
+
+        let mut calm = EquipmentMovementGenerator::new(
+            EquipmentMovementConfig {
+                activity: 0.1,
+                ..base
+            },
+            9,
+        )
+        .unwrap();
+        let mut vigorous = EquipmentMovementGenerator::new(
+            EquipmentMovementConfig {
+                activity: 0.95,
+                ..base
+            },
+            9,
+        )
+        .unwrap();
+        assert_ne!(expected, render(&mut calm, 24_000));
+        assert_ne!(expected, render(&mut vigorous, 24_000));
+
+        let mut quiet = EquipmentMovementGenerator::new(
+            EquipmentMovementConfig {
+                intensity: 0.2,
+                ..base
+            },
+            9,
+        )
+        .unwrap();
+        assert_ne!(expected, render(&mut quiet, 24_000));
+    }
+
+    #[test]
+    fn equipment_movement_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            EquipmentMovementGenerator::new(
+                EquipmentMovementConfig {
+                    sample_rate: 1_000,
+                    ..EquipmentMovementConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            EquipmentMovementGenerator::new(
+                EquipmentMovementConfig {
+                    activity: f32::NAN,
+                    ..EquipmentMovementConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            EquipmentMovementGenerator::new(
+                EquipmentMovementConfig {
+                    weight: 1.1,
+                    ..EquipmentMovementConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+
+        let mut generator =
+            EquipmentMovementGenerator::new(EquipmentMovementConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
     }
 
     #[test]
