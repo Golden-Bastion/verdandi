@@ -2176,7 +2176,6 @@ impl ProceduralGenerator for ObjectInteractionGenerator {
     }
 }
 
-
 const DAMAGE_EFFECT_EVENTS: usize = 8;
 
 #[derive(Clone, Copy)]
@@ -2350,8 +2349,7 @@ impl DamageEffectGenerator {
         let pitch_scale = 1.22 - config.size * 0.38;
         let body_start_frequency =
             (profile.body_start_frequency * pitch_scale).min(sample_rate * 0.40);
-        let body_end_frequency =
-            (profile.body_end_frequency * pitch_scale).min(sample_rate * 0.40);
+        let body_end_frequency = (profile.body_end_frequency * pitch_scale).min(sample_rate * 0.40);
         let stream_index = config.kind.stream_index();
 
         let noise_rng = Rng::new(derive_seed(seed, 0x444D_4E4F, stream_index));
@@ -2363,39 +2361,37 @@ impl DamageEffectGenerator {
         let event_window = total as f32 * (0.72 + config.size * 0.22);
         let event_duration =
             (sample_rate * profile.event_duration * (0.84 + config.size * 0.32)) as u32;
-        let events: [DamageEffectEvent; DAMAGE_EFFECT_EVENTS] =
-            std::array::from_fn(|index| {
-                if index >= profile.event_count {
-                    return DamageEffectEvent {
-                        start_frame: total,
-                        duration_frames: 0,
-                        amplitude: 0.0,
-                        phase: 0.0,
-                        phase_step: 0.0,
-                        decay: 1.0,
-                    };
-                }
+        let events: [DamageEffectEvent; DAMAGE_EFFECT_EVENTS] = std::array::from_fn(|index| {
+            if index >= profile.event_count {
+                return DamageEffectEvent {
+                    start_frame: total,
+                    duration_frames: 0,
+                    amplitude: 0.0,
+                    phase: 0.0,
+                    phase_step: 0.0,
+                    decay: 1.0,
+                };
+            }
 
-                let jitter = (event_rng.next_f32() - 0.5) * 0.035;
-                let progress = (profile.event_positions[index] + jitter).clamp(0.01, 0.98);
-                let start_frame = (event_window * progress) as u32;
-                let frequency = (profile.body_start_frequency
-                    * pitch_scale
-                    * (0.70 + event_rng.next_f32() * 0.70))
+            let jitter = (event_rng.next_f32() - 0.5) * 0.035;
+            let progress = (profile.event_positions[index] + jitter).clamp(0.01, 0.98);
+            let start_frame = (event_window * progress) as u32;
+            let frequency =
+                (profile.body_start_frequency * pitch_scale * (0.70 + event_rng.next_f32() * 0.70))
                     .min(sample_rate * 0.40);
-                let amplitude = profile.event_gain
-                    * (0.70 + config.force * 0.58)
-                    * (0.74 + config.size * 0.48)
-                    * (0.72 + event_rng.next_f32() * 0.56);
-                DamageEffectEvent {
-                    start_frame,
-                    duration_frames: event_duration,
-                    amplitude,
-                    phase: event_rng.next_f32(),
-                    phase_step: frequency / sample_rate,
-                    decay: profile.event_decay * (0.80 + event_rng.next_f32() * 0.40),
-                }
-            });
+            let amplitude = profile.event_gain
+                * (0.70 + config.force * 0.58)
+                * (0.74 + config.size * 0.48)
+                * (0.72 + event_rng.next_f32() * 0.56);
+            DamageEffectEvent {
+                start_frame,
+                duration_frames: event_duration,
+                amplitude,
+                phase: event_rng.next_f32(),
+                phase_step: frequency / sample_rate,
+                decay: profile.event_decay * (0.80 + event_rng.next_f32() * 0.40),
+            }
+        });
 
         Ok(Self {
             sample_rate,
@@ -2436,8 +2432,7 @@ impl ProceduralGenerator for DamageEffectGenerator {
             let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
             self.noise_state += self.noise_coefficient * (noise - self.noise_state);
             let high_noise = noise - self.noise_state;
-            let noise_envelope = (-elapsed * self.noise_decay).exp()
-                * (TAU * progress * 0.5).sin();
+            let noise_envelope = (-elapsed * self.noise_decay).exp() * (TAU * progress * 0.5).sin();
             let texture = (self.noise_state * self.low_noise_gain
                 + high_noise * self.high_noise_gain)
                 * noise_envelope;
@@ -2446,8 +2441,7 @@ impl ProceduralGenerator for DamageEffectGenerator {
             let body_envelope = attack * (-elapsed * self.body_decay).exp();
             let body_frequency = self.body_start_frequency
                 + (self.body_end_frequency - self.body_start_frequency) * progress;
-            let body =
-                (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
             let contacts: f32 = self
                 .events
                 .iter()
@@ -2676,11 +2670,13 @@ mod tests {
         );
     }
 
-
     #[test]
     fn damage_effects_are_deterministic_across_blocks_and_finish_cleanly() {
         for kind in [DamageEffectKind::BloodSplatter, DamageEffectKind::BoneBreak] {
-            let config = DamageEffectConfig { kind, ..DamageEffectConfig::default() };
+            let config = DamageEffectConfig {
+                kind,
+                ..DamageEffectConfig::default()
+            };
             let mut whole = DamageEffectGenerator::new(config, 0xDA6E).unwrap();
             let mut split = DamageEffectGenerator::new(config, 0xDA6E).unwrap();
             let expected = render(&mut whole, 48_000);
@@ -2701,12 +2697,18 @@ mod tests {
     fn damage_effect_kinds_have_distinct_bounded_profiles() {
         let base = DamageEffectConfig::default();
         let mut splatter = DamageEffectGenerator::new(
-            DamageEffectConfig { kind: DamageEffectKind::BloodSplatter, ..base },
+            DamageEffectConfig {
+                kind: DamageEffectKind::BloodSplatter,
+                ..base
+            },
             61,
         )
         .unwrap();
         let mut fracture = DamageEffectGenerator::new(
-            DamageEffectConfig { kind: DamageEffectKind::BoneBreak, ..base },
+            DamageEffectConfig {
+                kind: DamageEffectKind::BoneBreak,
+                ..base
+            },
             61,
         )
         .unwrap();
@@ -2728,12 +2730,18 @@ mod tests {
         assert_ne!(first_pcm, render(&mut other_seed, 24_000));
 
         let mut light = DamageEffectGenerator::new(
-            DamageEffectConfig { force: 0.1, ..config },
+            DamageEffectConfig {
+                force: 0.1,
+                ..config
+            },
             17,
         )
         .unwrap();
         let mut heavy = DamageEffectGenerator::new(
-            DamageEffectConfig { force: 0.95, ..config },
+            DamageEffectConfig {
+                force: 0.95,
+                ..config
+            },
             17,
         )
         .unwrap();
@@ -2741,24 +2749,36 @@ mod tests {
         assert_ne!(first_pcm, render(&mut heavy, 24_000));
 
         let mut small = DamageEffectGenerator::new(
-            DamageEffectConfig { size: 0.1, ..config },
+            DamageEffectConfig {
+                size: 0.1,
+                ..config
+            },
             17,
         )
         .unwrap();
         let mut large = DamageEffectGenerator::new(
-            DamageEffectConfig { size: 0.95, ..config },
+            DamageEffectConfig {
+                size: 0.95,
+                ..config
+            },
             17,
         )
         .unwrap();
         assert_ne!(render(&mut small, 24_000), render(&mut large, 24_000));
 
         let mut quiet = DamageEffectGenerator::new(
-            DamageEffectConfig { intensity: 0.2, ..config },
+            DamageEffectConfig {
+                intensity: 0.2,
+                ..config
+            },
             17,
         )
         .unwrap();
         let mut loud = DamageEffectGenerator::new(
-            DamageEffectConfig { intensity: 0.9, ..config },
+            DamageEffectConfig {
+                intensity: 0.9,
+                ..config
+            },
             17,
         )
         .unwrap();
