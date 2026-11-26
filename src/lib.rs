@@ -32,6 +32,7 @@ pub mod prelude {
     pub use crate::preset::{MusicPace, MusicPreset};
     pub use crate::procedural::{
         BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
+        EquipmentMovementConfig, EquipmentMovementGenerator, EquipmentMovementKind,
         CharacterActionGenerator, CharacterActionKind, FootstepConfig, FootstepGenerator,
         FootstepSurface, ImpactConfig, ImpactGenerator, ImpactMaterial, ProceduralError,
         ProceduralGenerator, RainConfig, RainGenerator, WeaponHandlingConfig,
