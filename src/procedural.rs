@@ -272,7 +272,143 @@ impl Default for FootstepConfig {
     }
 }
 
+/// Surface profile used by the material-aware footstep generator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FootstepSurface {
+    /// Soft soil with a muted body and dry granular contact.
+    Dirt,
+    /// Light, damped contact with a soft rustling texture.
+    Grass,
+    /// Loose stones with a coarse, uneven crunch.
+    Gravel,
+    /// Hollow, woody contact with a short body resonance.
+    Wood,
+    /// Firm, dense contact with a compact knock.
+    Stone,
+    /// Bright, hard contact with a short metallic ring.
+    Metal,
+    /// Wet contact with a splash-like noise component.
+    ShallowWater,
+    /// Soft, compressed snow with a muffled crunch.
+    Snow,
+}
+
+impl FootstepSurface {
+    fn profile(self) -> FootstepSurfaceProfile {
+        match self {
+            Self::Dirt => FootstepSurfaceProfile {
+                body_frequency: 76.0,
+                body_decay: 22.0,
+                body_gain: 0.64,
+                noise_coefficient: 0.12,
+                texture_gain: 0.18,
+                texture_decay: 40.0,
+                transient_gain: 0.30,
+                transient_decay: 58.0,
+            },
+            Self::Grass => FootstepSurfaceProfile {
+                body_frequency: 94.0,
+                body_decay: 24.0,
+                body_gain: 0.42,
+                noise_coefficient: 0.22,
+                texture_gain: 0.24,
+                texture_decay: 38.0,
+                transient_gain: 0.20,
+                transient_decay: 45.0,
+            },
+            Self::Gravel => FootstepSurfaceProfile {
+                body_frequency: 112.0,
+                body_decay: 21.0,
+                body_gain: 0.52,
+                noise_coefficient: 0.48,
+                texture_gain: 0.42,
+                texture_decay: 32.0,
+                transient_gain: 0.46,
+                transient_decay: 62.0,
+            },
+            Self::Wood => FootstepSurfaceProfile {
+                body_frequency: 88.0,
+                body_decay: 21.0,
+                body_gain: 0.68,
+                noise_coefficient: 0.10,
+                texture_gain: 0.12,
+                texture_decay: 44.0,
+                transient_gain: 0.26,
+                transient_decay: 68.0,
+            },
+            Self::Stone => FootstepSurfaceProfile {
+                body_frequency: 126.0,
+                body_decay: 24.0,
+                body_gain: 0.62,
+                noise_coefficient: 0.16,
+                texture_gain: 0.10,
+                texture_decay: 52.0,
+                transient_gain: 0.43,
+                transient_decay: 74.0,
+            },
+            Self::Metal => FootstepSurfaceProfile {
+                body_frequency: 184.0,
+                body_decay: 11.0,
+                body_gain: 0.40,
+                noise_coefficient: 0.08,
+                texture_gain: 0.05,
+                texture_decay: 44.0,
+                transient_gain: 0.54,
+                transient_decay: 72.0,
+            },
+            Self::ShallowWater => FootstepSurfaceProfile {
+                body_frequency: 64.0,
+                body_decay: 18.0,
+                body_gain: 0.48,
+                noise_coefficient: 0.62,
+                texture_gain: 0.30,
+                texture_decay: 27.0,
+                transient_gain: 0.65,
+                transient_decay: 52.0,
+            },
+            Self::Snow => FootstepSurfaceProfile {
+                body_frequency: 106.0,
+                body_decay: 27.0,
+                body_gain: 0.46,
+                noise_coefficient: 0.40,
+                texture_gain: 0.38,
+                texture_decay: 30.0,
+                transient_gain: 0.30,
+                transient_decay: 52.0,
+            },
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::Dirt => 0,
+            Self::Grass => 1,
+            Self::Gravel => 2,
+            Self::Wood => 3,
+            Self::Stone => 4,
+            Self::Metal => 5,
+            Self::ShallowWater => 6,
+            Self::Snow => 7,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FootstepSurfaceProfile {
+    body_frequency: f32,
+    body_decay: f32,
+    body_gain: f32,
+    noise_coefficient: f32,
+    texture_gain: f32,
+    texture_decay: f32,
+    transient_gain: f32,
+    transient_decay: f32,
+}
+
 /// Finite deterministic generator for one footstep.
+///
+/// The regular constructor retains the original generic footstep profile. Use new_for_surface
+/// when the host knows which ground material the character is crossing.
 pub struct FootstepGenerator {
     sample_rate: f32,
     intensity: f32,
@@ -281,9 +417,12 @@ pub struct FootstepGenerator {
     total: u32,
     rng: Rng,
     low_pass: f32,
+    surface_profile: Option<FootstepSurfaceProfile>,
 }
 impl FootstepGenerator {
-    /// Construct one deterministic footstep.
+    /// Construct one generic deterministic footstep.
+    ///
+    /// This constructor retains the original material-neutral sound for compatibility.
     pub fn new(config: FootstepConfig, seed: u64) -> Result<Self, ProceduralError> {
         validate_rate(config.sample_rate)?;
         validate_unit(config.intensity)?;
@@ -296,7 +435,27 @@ impl FootstepGenerator {
             total: (config.sample_rate as f32 * 0.22) as u32,
             rng: Rng::new(derive_seed(seed, 0x5354_4550, 0)),
             low_pass: 0.0,
+            surface_profile: None,
         })
+    }
+
+    /// Construct one deterministic footstep shaped for a known ground surface.
+    ///
+    /// The surface selects a stylized mix of body resonance, friction, and contact transient.
+    /// Brightness adjusts the high-frequency texture. The seed controls repeatable variation
+    /// using a stream independent from the generic footstep constructor.
+    pub fn new_for_surface(
+        config: FootstepConfig,
+        surface: FootstepSurface,
+        seed: u64,
+    ) -> Result<Self, ProceduralError> {
+        let mut generator = Self::new(config, seed)?;
+        let mut profile = surface.profile();
+        let mut rng = Rng::new(derive_seed(seed, 0x5355_5246, surface.stream_index()));
+        profile.body_frequency *= 0.94 + rng.next_f32() * 0.12;
+        generator.rng = Rng::new(derive_seed(seed, 0x5354_4550, surface.stream_index() + 1));
+        generator.surface_profile = Some(profile);
+        Ok(generator)
     }
 }
 impl ProceduralGenerator for FootstepGenerator {
@@ -310,11 +469,33 @@ impl ProceduralGenerator for FootstepGenerator {
             }
             let t = self.position as f32 / self.sample_rate;
             let noise = self.rng.next_f32() * 2.0 - 1.0;
-            self.low_pass += (0.06 + self.brightness * 0.72) * (noise - self.low_pass);
-            let body = (TAU * (62.0 - 18.0 * (t * 12.0).min(1.0)) * t).sin() * (-t * 23.0).exp();
-            let sample = (body * 0.62 + self.low_pass * (-t * 42.0).exp() * 0.38)
-                * self.intensity
-                * (1.0 - t / 0.22).max(0.0);
+            let sample = if let Some(profile) = self.surface_profile {
+                self.low_pass += profile.noise_coefficient
+                    * (0.70 + self.brightness * 0.60)
+                    * (noise - self.low_pass);
+                let progress = self.position as f32 / self.total as f32;
+                let body = (TAU * profile.body_frequency * t).sin()
+                    * (-t * profile.body_decay).exp()
+                    * profile.body_gain;
+                let texture = self.low_pass
+                    * (-t * profile.texture_decay).exp()
+                    * profile.texture_gain
+                    * (0.75 + self.brightness * 0.50);
+                let transient = (noise - self.low_pass)
+                    * (-t * profile.transient_decay).exp()
+                    * profile.transient_gain
+                    * (0.65 + self.brightness * 0.70);
+                (body + texture + transient)
+                    * self.intensity
+                    * (1.0 - progress).max(0.0)
+            } else {
+                self.low_pass += (0.06 + self.brightness * 0.72) * (noise - self.low_pass);
+                let body =
+                    (TAU * (62.0 - 18.0 * (t * 12.0).min(1.0)) * t).sin() * (-t * 23.0).exp();
+                (body * 0.62 + self.low_pass * (-t * 42.0).exp() * 0.38)
+                    * self.intensity
+                    * (1.0 - t / 0.22).max(0.0)
+            };
             frame[0] = sample.clamp(-1.0, 1.0);
             frame[1] = frame[0];
             self.position += 1;
@@ -1395,6 +1576,130 @@ mod tests {
         actual_rain.extend(render(&mut rain_split, 3072));
         assert_eq!(expected_rain, actual_rain);
         assert!(rain_samples.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+
+    #[test]
+    fn surface_footsteps_are_deterministic_across_blocks_and_end_in_silence() {
+        let config = FootstepConfig::default();
+        let mut whole =
+            FootstepGenerator::new_for_surface(config, FootstepSurface::Gravel, 0xF007).unwrap();
+        let mut split =
+            FootstepGenerator::new_for_surface(config, FootstepSurface::Gravel, 0xF007).unwrap();
+        let expected = render(&mut whole, 12_000);
+        let mut actual = render(&mut split, 4_321);
+        actual.extend(render(&mut split, 7_679));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(whole.is_finished());
+        let total_frames = (config.sample_rate as usize * 22) / 100;
+        assert!(expected[total_frames * 2..]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+    }
+
+    #[test]
+    fn footstep_surfaces_have_distinct_bounded_profiles() {
+        let config = FootstepConfig::default();
+        let surfaces = [
+            FootstepSurface::Dirt,
+            FootstepSurface::Grass,
+            FootstepSurface::Gravel,
+            FootstepSurface::Wood,
+            FootstepSurface::Stone,
+            FootstepSurface::Metal,
+            FootstepSurface::ShallowWater,
+            FootstepSurface::Snow,
+        ];
+        let mut renders = Vec::new();
+        for surface in surfaces {
+            let mut generator =
+                FootstepGenerator::new_for_surface(config, surface, 0xF007).unwrap();
+            let samples = render(&mut generator, 12_000);
+            bounded(&samples);
+            assert!(generator.is_finished());
+            assert!(samples.iter().any(|sample| sample.abs() > 0.001));
+            renders.push(samples);
+        }
+
+        for (index, samples) in renders.iter().enumerate() {
+            assert!(
+                renders[..index].iter().all(|previous| previous != samples),
+                "surface profile {index} duplicated an earlier sound"
+            );
+        }
+    }
+
+    #[test]
+    fn surface_footstep_controls_and_seed_are_effective() {
+        let base = FootstepConfig::default();
+        let mut first =
+            FootstepGenerator::new_for_surface(base, FootstepSurface::Stone, 14).unwrap();
+        let expected = render(&mut first, 12_000);
+        let mut same =
+            FootstepGenerator::new_for_surface(base, FootstepSurface::Stone, 14).unwrap();
+        let mut other_seed =
+            FootstepGenerator::new_for_surface(base, FootstepSurface::Stone, 15).unwrap();
+        assert_eq!(expected, render(&mut same, 12_000));
+        assert_ne!(expected, render(&mut other_seed, 12_000));
+
+        let mut quiet = FootstepGenerator::new_for_surface(
+            FootstepConfig {
+                intensity: 0.2,
+                ..base
+            },
+            FootstepSurface::Stone,
+            14,
+        )
+        .unwrap();
+        let mut bright = FootstepGenerator::new_for_surface(
+            FootstepConfig {
+                brightness: 0.95,
+                ..base
+            },
+            FootstepSurface::Stone,
+            14,
+        )
+        .unwrap();
+        assert_ne!(expected, render(&mut quiet, 12_000));
+        assert_ne!(expected, render(&mut bright, 12_000));
+    }
+
+    #[test]
+    fn surface_footsteps_reject_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            FootstepGenerator::new_for_surface(
+                FootstepConfig {
+                    sample_rate: 1_000,
+                    ..FootstepConfig::default()
+                },
+                FootstepSurface::Dirt,
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            FootstepGenerator::new_for_surface(
+                FootstepConfig {
+                    brightness: f32::NAN,
+                    ..FootstepConfig::default()
+                },
+                FootstepSurface::Grass,
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator = FootstepGenerator::new_for_surface(
+            FootstepConfig::default(),
+            FootstepSurface::Metal,
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
     }
 
     #[test]
