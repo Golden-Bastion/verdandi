@@ -1833,6 +1833,349 @@ impl ProceduralGenerator for EquipmentMovementGenerator {
     }
 }
 
+const OBJECT_INTERACTION_EVENTS: usize = 4;
+
+#[derive(Clone, Copy)]
+struct ObjectInteractionEvent {
+    start_frame: u32,
+    duration_frames: u32,
+    amplitude: f32,
+    phase: f32,
+    phase_step: f32,
+    decay: f32,
+}
+
+impl ObjectInteractionEvent {
+    fn sample(self, position: u32, sample_rate: f32) -> f32 {
+        if position < self.start_frame {
+            return 0.0;
+        }
+        let age_frames = position - self.start_frame;
+        if age_frames >= self.duration_frames {
+            return 0.0;
+        }
+        let elapsed = age_frames as f32 / sample_rate;
+        let phase = (self.phase + age_frames as f32 * self.phase_step).rem_euclid(1.0);
+        self.amplitude * (-elapsed * self.decay).exp() * (TAU * phase).sin()
+    }
+}
+
+/// Dominant object material used to shape interaction resonance and contact texture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObjectInteractionMaterial {
+    /// Damped, woody resonance.
+    Wood,
+    /// Bright, sustained metallic contact.
+    Metal,
+    /// Dense, short stone response.
+    Stone,
+    /// Bright, delicate glass response.
+    Glass,
+    /// Hard, bright ceramic response.
+    Ceramic,
+}
+
+impl ObjectInteractionMaterial {
+    fn profile(self) -> (f32, f32, f32, f32) {
+        match self {
+            Self::Wood => (240.0, 15.0, 0.74, 0.34),
+            Self::Metal => (920.0, 24.0, 0.94, 0.18),
+            Self::Stone => (430.0, 18.0, 0.82, 0.25),
+            Self::Glass => (1_280.0, 30.0, 0.91, 0.14),
+            Self::Ceramic => (1_020.0, 26.0, 0.88, 0.16),
+        }
+    }
+}
+
+/// General object action represented by a procedural one-shot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObjectInteractionKind {
+    /// Lift or take hold of an object, with restrained contact and movement texture.
+    Pickup,
+    /// Set an object down in a controlled way.
+    Place,
+    /// Drop an object, with a short, bounded sequence of suggested bounces.
+    Drop,
+    /// Move an object or fixture into an open position.
+    Open,
+    /// Move an object or fixture into a closed position.
+    Close,
+    /// Operate a small switch, catch, or similar toggle.
+    Toggle,
+}
+
+#[derive(Clone, Copy)]
+struct ObjectInteractionProfile {
+    duration: f32,
+    noise_gain: f32,
+    body_gain: f32,
+    body_attack: f32,
+    body_decay: f32,
+    event_count: usize,
+    event_gain: f32,
+    event_positions: [f32; OBJECT_INTERACTION_EVENTS],
+}
+
+impl ObjectInteractionKind {
+    fn profile(self) -> ObjectInteractionProfile {
+        match self {
+            Self::Pickup => ObjectInteractionProfile {
+                duration: 0.30,
+                noise_gain: 0.34,
+                body_gain: 0.18,
+                body_attack: 0.008,
+                body_decay: 15.0,
+                event_count: 1,
+                event_gain: 0.20,
+                event_positions: [0.16, 0.0, 0.0, 0.0],
+            },
+            Self::Place => ObjectInteractionProfile {
+                duration: 0.36,
+                noise_gain: 0.15,
+                body_gain: 0.34,
+                body_attack: 0.0015,
+                body_decay: 14.0,
+                event_count: 1,
+                event_gain: 0.42,
+                event_positions: [0.76, 0.0, 0.0, 0.0],
+            },
+            Self::Drop => ObjectInteractionProfile {
+                duration: 0.62,
+                noise_gain: 0.09,
+                body_gain: 0.48,
+                body_attack: 0.0008,
+                body_decay: 6.5,
+                event_count: 4,
+                event_gain: 0.45,
+                event_positions: [0.035, 0.29, 0.52, 0.72],
+            },
+            Self::Open => ObjectInteractionProfile {
+                duration: 0.72,
+                noise_gain: 0.48,
+                body_gain: 0.16,
+                body_attack: 0.018,
+                body_decay: 8.0,
+                event_count: 2,
+                event_gain: 0.13,
+                event_positions: [0.14, 0.88, 0.0, 0.0],
+            },
+            Self::Close => ObjectInteractionProfile {
+                duration: 0.46,
+                noise_gain: 0.20,
+                body_gain: 0.40,
+                body_attack: 0.001,
+                body_decay: 12.0,
+                event_count: 2,
+                event_gain: 0.36,
+                event_positions: [0.78, 0.94, 0.0, 0.0],
+            },
+            Self::Toggle => ObjectInteractionProfile {
+                duration: 0.22,
+                noise_gain: 0.05,
+                body_gain: 0.14,
+                body_attack: 0.0005,
+                body_decay: 26.0,
+                event_count: 1,
+                event_gain: 0.48,
+                event_positions: [0.46, 0.0, 0.0, 0.0],
+            },
+        }
+    }
+
+    fn stream_index(self) -> u64 {
+        match self {
+            Self::Pickup => 0,
+            Self::Place => 1,
+            Self::Drop => 2,
+            Self::Open => 3,
+            Self::Close => 4,
+            Self::Toggle => 5,
+        }
+    }
+}
+
+/// Configuration for one deterministic object-interaction sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ObjectInteractionConfig {
+    /// Output sample rate in Hz.
+    pub sample_rate: u32,
+    /// Overall output level, 0.0..=1.0.
+    pub intensity: f32,
+    /// Relative object weight, 0.0..=1.0. Higher values lower the resonant body.
+    pub weight: f32,
+    /// Action speed, 0.0..=1.0. Higher values tighten the action and shorten its movement texture.
+    pub speed: f32,
+    /// Dominant material character of the handled object or fixture.
+    pub material: ObjectInteractionMaterial,
+    /// Object action to render.
+    pub kind: ObjectInteractionKind,
+}
+
+impl Default for ObjectInteractionConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 44_100,
+            intensity: 0.78,
+            weight: 0.55,
+            speed: 0.55,
+            material: ObjectInteractionMaterial::Wood,
+            kind: ObjectInteractionKind::Close,
+        }
+    }
+}
+
+/// Finite deterministic generator for common object pickup, placement, drop, and mechanism actions.
+///
+/// Material shapes the resonance and contact texture. Weight shifts the body toward lower
+/// frequencies, while speed changes duration and transient character. Contact events are
+/// prepared at construction in a fixed-size array, using seeded streams independent from the
+/// rendered noise. These are stylized interaction sounds, not door, lock, or rigid-body
+/// simulations; use host-provided recordings for recognizable mechanisms or specific objects.
+pub struct ObjectInteractionGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    position: u32,
+    total: u32,
+    noise_rng: Rng,
+    noise_state: f32,
+    noise_gain: f32,
+    noise_coefficient: f32,
+    body_phase: f32,
+    body_start_frequency: f32,
+    body_end_frequency: f32,
+    body_attack: f32,
+    body_decay: f32,
+    body_gain: f32,
+    events: [ObjectInteractionEvent; OBJECT_INTERACTION_EVENTS],
+}
+
+impl ObjectInteractionGenerator {
+    /// Construct one deterministic object-interaction sound with independent random streams.
+    pub fn new(config: ObjectInteractionConfig, seed: u64) -> Result<Self, ProceduralError> {
+        validate_rate(config.sample_rate)?;
+        validate_unit(config.intensity)?;
+        validate_unit(config.weight)?;
+        validate_unit(config.speed)?;
+
+        let profile = config.kind.profile();
+        let (material_frequency, material_decay, material_texture, noise_coefficient) =
+            config.material.profile();
+        let sample_rate = config.sample_rate as f32;
+        let duration_scale = (1.24 - config.speed * 0.42) * (0.92 + config.weight * 0.14);
+        let total = (sample_rate * profile.duration * duration_scale) as u32;
+        let weight_pitch = 1.24 - config.weight * 0.42;
+        let speed_pitch = 0.94 + config.speed * 0.12;
+        let body_start_frequency =
+            (material_frequency * weight_pitch * speed_pitch).min(sample_rate * 0.40);
+        let body_end_frequency =
+            (body_start_frequency * (0.78 + config.speed * 0.16)).min(sample_rate * 0.40);
+        let stream_index = config.kind.stream_index();
+
+        let noise_rng = Rng::new(derive_seed(seed, 0x4F49_4E4F, stream_index));
+        let mut phase_rng = Rng::new(derive_seed(seed, 0x4F49_5048, stream_index));
+        let mut event_rng = Rng::new(derive_seed(seed, 0x4F49_4556, stream_index));
+        let body_phase = phase_rng.next_f32();
+
+        let event_duration =
+            (sample_rate * (0.020 + config.weight * 0.012 + (1.0 - config.speed) * 0.008)) as u32;
+        let events: [ObjectInteractionEvent; OBJECT_INTERACTION_EVENTS] =
+            std::array::from_fn(|index| {
+                if index >= profile.event_count {
+                    return ObjectInteractionEvent {
+                        start_frame: total,
+                        duration_frames: 0,
+                        amplitude: 0.0,
+                        phase: 0.0,
+                        phase_step: 0.0,
+                        decay: 1.0,
+                    };
+                }
+
+                let jitter = (event_rng.next_f32() - 0.5) * 0.025;
+                let progress = (profile.event_positions[index] + jitter).clamp(0.02, 0.97);
+                let start_frame = (total as f32 * progress) as u32;
+                let frequency =
+                    (material_frequency * weight_pitch * (0.68 + event_rng.next_f32() * 0.85))
+                        .min(sample_rate * 0.40);
+                let amplitude = profile.event_gain
+                    * material_texture
+                    * (0.72 + config.weight * 0.44)
+                    * (0.72 + event_rng.next_f32() * 0.56);
+                ObjectInteractionEvent {
+                    start_frame,
+                    duration_frames: event_duration,
+                    amplitude,
+                    phase: event_rng.next_f32(),
+                    phase_step: frequency / sample_rate,
+                    decay: material_decay * (0.78 + event_rng.next_f32() * 0.44),
+                }
+            });
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            position: 0,
+            total,
+            noise_rng,
+            noise_state: 0.0,
+            noise_gain: profile.noise_gain * material_texture * (0.82 + config.speed * 0.35),
+            noise_coefficient,
+            body_phase,
+            body_start_frequency,
+            body_end_frequency,
+            body_attack: profile.body_attack,
+            body_decay: profile.body_decay * (1.08 - config.weight * 0.18),
+            body_gain: profile.body_gain * material_texture * (0.78 + config.weight * 0.44),
+            events,
+        })
+    }
+}
+
+impl ProceduralGenerator for ObjectInteractionGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.noise_rng.next_f32() * 2.0 - 1.0;
+            self.noise_state += self.noise_coefficient * (noise - self.noise_state);
+            let texture =
+                (noise - self.noise_state) * self.noise_gain * (TAU * progress * 0.5).sin();
+
+            let attack = 1.0 - (-elapsed / self.body_attack).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let body_frequency = self.body_start_frequency
+                + (self.body_end_frequency - self.body_start_frequency) * progress;
+            let body = (self.body_phase * TAU).sin() * body_envelope * self.body_gain;
+            let contacts: f32 = self
+                .events
+                .iter()
+                .map(|event| event.sample(self.position, self.sample_rate))
+                .sum();
+
+            let sample = ((texture + body + contacts) * self.intensity).clamp(-1.0, 1.0);
+            frame[0] = sample;
+            frame[1] = sample;
+
+            self.body_phase = (self.body_phase + body_frequency / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1843,6 +2186,199 @@ mod tests {
     }
     fn bounded(samples: &[f32]) {
         assert!(samples.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+    }
+
+    #[test]
+    fn object_interactions_are_deterministic_across_blocks_and_finish_cleanly() {
+        let config = ObjectInteractionConfig {
+            kind: ObjectInteractionKind::Drop,
+            ..ObjectInteractionConfig::default()
+        };
+        let mut whole = ObjectInteractionGenerator::new(config, 0x0B1E).unwrap();
+        let mut split = ObjectInteractionGenerator::new(config, 0x0B1E).unwrap();
+        assert!(!whole.is_finished());
+        let expected = render(&mut whole, 48_000);
+        let mut actual = render(&mut split, 257);
+        actual.extend(render(&mut split, 7_991));
+        actual.extend(render(&mut split, 39_752));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+        assert!(expected.iter().any(|sample| sample.abs() > 0.001));
+        assert!(whole.is_finished());
+        assert!(split.is_finished());
+        let silence = render(&mut split, 256);
+        assert!(silence.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn object_interaction_kinds_and_materials_have_distinct_bounded_profiles() {
+        let base = ObjectInteractionConfig::default();
+        let kinds = [
+            ObjectInteractionKind::Pickup,
+            ObjectInteractionKind::Place,
+            ObjectInteractionKind::Drop,
+            ObjectInteractionKind::Open,
+            ObjectInteractionKind::Close,
+            ObjectInteractionKind::Toggle,
+        ];
+        let kind_outputs: Vec<Vec<f32>> = kinds
+            .into_iter()
+            .map(|kind| {
+                let mut generator =
+                    ObjectInteractionGenerator::new(ObjectInteractionConfig { kind, ..base }, 91)
+                        .unwrap();
+                let samples = render(&mut generator, 48_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        for output in kind_outputs.iter().skip(1) {
+            assert_ne!(&kind_outputs[0], output);
+        }
+
+        let materials = [
+            ObjectInteractionMaterial::Wood,
+            ObjectInteractionMaterial::Metal,
+            ObjectInteractionMaterial::Stone,
+            ObjectInteractionMaterial::Glass,
+            ObjectInteractionMaterial::Ceramic,
+        ];
+        let material_outputs: Vec<Vec<f32>> = materials
+            .into_iter()
+            .map(|material| {
+                let mut generator = ObjectInteractionGenerator::new(
+                    ObjectInteractionConfig {
+                        kind: ObjectInteractionKind::Drop,
+                        material,
+                        ..base
+                    },
+                    92,
+                )
+                .unwrap();
+                let samples = render(&mut generator, 48_000);
+                bounded(&samples);
+                samples
+            })
+            .collect();
+        for output in material_outputs.iter().skip(1) {
+            assert_ne!(&material_outputs[0], output);
+        }
+    }
+
+    #[test]
+    fn object_interaction_seed_and_controls_are_effective() {
+        let config = ObjectInteractionConfig::default();
+        let mut first = ObjectInteractionGenerator::new(config, 7).unwrap();
+        let mut same = ObjectInteractionGenerator::new(config, 7).unwrap();
+        let mut other_seed = ObjectInteractionGenerator::new(config, 8).unwrap();
+        let first_pcm = render(&mut first, 24_000);
+        assert_eq!(first_pcm, render(&mut same, 24_000));
+        assert_ne!(first_pcm, render(&mut other_seed, 24_000));
+
+        let mut light = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                weight: 0.1,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut heavy = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                weight: 0.95,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(first_pcm, render(&mut light, 24_000));
+        assert_ne!(first_pcm, render(&mut heavy, 24_000));
+
+        let mut slow = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                speed: 0.1,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut fast = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                speed: 0.95,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(render(&mut slow, 24_000), render(&mut fast, 24_000));
+
+        let mut quiet = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                intensity: 0.2,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        let mut loud = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                intensity: 0.9,
+                ..config
+            },
+            7,
+        )
+        .unwrap();
+        assert_ne!(render(&mut quiet, 24_000), render(&mut loud, 24_000));
+    }
+
+    #[test]
+    fn object_interaction_rejects_invalid_configuration_and_odd_output() {
+        assert!(matches!(
+            ObjectInteractionGenerator::new(
+                ObjectInteractionConfig {
+                    sample_rate: 384_000,
+                    ..ObjectInteractionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            ObjectInteractionGenerator::new(
+                ObjectInteractionConfig {
+                    intensity: f32::NAN,
+                    ..ObjectInteractionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            ObjectInteractionGenerator::new(
+                ObjectInteractionConfig {
+                    weight: 1.1,
+                    ..ObjectInteractionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            ObjectInteractionGenerator::new(
+                ObjectInteractionConfig {
+                    speed: f32::INFINITY,
+                    ..ObjectInteractionConfig::default()
+                },
+                0
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        let mut generator =
+            ObjectInteractionGenerator::new(ObjectInteractionConfig::default(), 0).unwrap();
+        assert_eq!(
+            generator.render(&mut [0.0; 3]),
+            Err(ProceduralError::OutputMustContainStereoFrames)
+        );
     }
 
     #[test]

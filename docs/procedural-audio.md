@@ -216,6 +216,46 @@ fn make_armor_rattle(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Er
 
 These are stylized movement textures, not simulations of particular clothing, armor construction, or equipment attachment points. The host decides when the sound occurs and which profile best fits its equipment. Use supplied recordings where a specific outfit or gear set needs a recognizable identity.
 
+
+## Generating object-interaction sounds
+
+Use `ObjectInteractionGenerator` for generic object handling and simple mechanism actions. Its
+`ObjectInteractionKind` profiles cover `Pickup`, `Place`, `Drop`, `Open`, `Close`, and
+`Toggle`. `ObjectInteractionMaterial` selects a dominant wood, metal, stone, glass, or ceramic
+response. `weight` shifts the resonant body, `speed` changes action timing and texture, and
+`intensity` controls output level.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, ObjectInteractionConfig, ObjectInteractionGenerator, ObjectInteractionKind,
+    ObjectInteractionMaterial, ProceduralGenerator,
+};
+
+fn make_container_open(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = ObjectInteractionConfig {
+        sample_rate: 48_000,
+        intensity: 0.8,
+        weight: 0.65,
+        speed: 0.5,
+        material: ObjectInteractionMaterial::Wood,
+        kind: ObjectInteractionKind::Open,
+    };
+    let mut generator = ObjectInteractionGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 9) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+`Drop` uses a small fixed sequence of contacts to suggest a bounded bounce. `Open`, `Close`, and
+`Toggle` provide generic movement/contact shapes; they do not model particular hinges, locks,
+switch designs, or rigid-body physics. The host chooses the action and material from its own
+object state, prepares the clip outside the playback callback, and submits it through the normal
+effects path. Use supplied recordings when a door, mechanism, tool, or object needs a recognizable
+identity or more detailed moving parts.
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.
@@ -256,6 +296,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `CharacterActionGenerator` | Finite | intensity, force, weight, action kind |
 | `WeaponHandlingGenerator` | Finite | intensity, weight, speed, material, handling kind |
 | `EquipmentMovementGenerator` | Finite | intensity, weight, activity, movement kind |
+| `ObjectInteractionGenerator` | Finite | intensity, weight, speed, material, object action |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
