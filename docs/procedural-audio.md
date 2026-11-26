@@ -293,6 +293,46 @@ object state, prepares the clip outside the playback callback, and submits it th
 effects path. Use supplied recordings when a door, mechanism, tool, or object needs a recognizable
 identity or more detailed moving parts.
 
+
+## Generating tool-action sounds
+
+Use `ToolActionGenerator` for generic chopping, digging, scraping, and sawing sounds.
+`ToolActionMaterial` selects the target response for earth, wood, stone, or metal.
+`force` controls contact energy, `weight` shifts the resonant body, and `speed` changes
+the action duration and repeated-friction timing.
+
+```rust
+use std::sync::Arc;
+use verdandi::prelude::{
+    AudioClip, ProceduralGenerator, ToolActionConfig, ToolActionGenerator, ToolActionKind,
+    ToolActionMaterial,
+};
+
+fn make_wood_chop(seed: u64) -> Result<Arc<AudioClip>, Box<dyn std::error::Error>> {
+    let config = ToolActionConfig {
+        sample_rate: 48_000,
+        intensity: 0.8,
+        force: 0.85,
+        weight: 0.7,
+        speed: 0.6,
+        material: ToolActionMaterial::Wood,
+        kind: ToolActionKind::Chop,
+    };
+    let mut generator = ToolActionGenerator::new(config, seed)?;
+    let frames = (config.sample_rate as usize * 7) / 10;
+    let mut pcm = vec![0.0; frames * 2];
+    generator.render(&mut pcm)?;
+    Ok(Arc::new(AudioClip::from_samples(config.sample_rate, 2, pcm)?))
+}
+```
+
+`Chop` emphasizes a strong contact and short follow-through; `Dig` combines gritty movement with
+several contacts; `Scrape` sustains friction across the action; and `Saw` uses repeated friction
+strokes. The material profiles are stylized sound-design starting points, not physical tool or
+surface simulations. Use supplied recordings where a specific tool, engine, or machine needs a
+recognizable identity. Generate clips outside the playback callback and submit them through the
+existing effects path.
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.
@@ -335,10 +375,11 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `WeaponHandlingGenerator` | Finite | intensity, weight, speed, material, handling kind |
 | `EquipmentMovementGenerator` | Finite | intensity, weight, activity, movement kind |
 | `ObjectInteractionGenerator` | Finite | intensity, weight, speed, material, object action |
+| `ToolActionGenerator` | Finite | intensity, force, weight, speed, target material, tool action |
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include vocal pain/exertion and death sounds, additional combat contacts, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+These are initial sound-design building blocks, not a closed catalogue of supported effects. Further families may include vocal pain/exertion and death sounds, additional combat contacts, specialized machinery, and more object-specific destruction sounds. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
 
 
 ## Application independence

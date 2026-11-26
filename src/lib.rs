@@ -37,10 +37,10 @@ pub mod prelude {
         EquipmentMovementKind, FootstepConfig, FootstepGenerator, FootstepSurface, ImpactConfig,
         ImpactGenerator, ImpactMaterial, ObjectInteractionConfig, ObjectInteractionGenerator,
         ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError, ProceduralGenerator,
-        RainConfig, RainGenerator, WeaponHandlingConfig, WeaponHandlingGenerator,
-        WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactGenerator,
-        WeaponImpactKind, WindConfig, WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE,
-        MIN_PROCEDURAL_SAMPLE_RATE,
+        RainConfig, RainGenerator, ToolActionConfig, ToolActionGenerator, ToolActionKind,
+        ToolActionMaterial, WeaponHandlingConfig, WeaponHandlingGenerator, WeaponHandlingKind,
+        WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactGenerator, WeaponImpactKind,
+        WindConfig, WindGenerator, MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
     };
     pub use crate::sfz::{
         parse_sfz, SfzDefinition, SfzError, SfzInstrument, SfzLoopMode, SfzRegion, SfzSampler,
