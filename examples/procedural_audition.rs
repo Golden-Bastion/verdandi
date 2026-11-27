@@ -20,8 +20,8 @@ use verdandi::prelude::{
     MechanicalActionKind, ObjectInteractionConfig, ObjectInteractionGenerator,
     ObjectInteractionKind, ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig,
     ToolActionGenerator, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
-    WeaponHandlingGenerator, WeaponHandlingKind, WeaponImpactConfig,
-    WeaponImpactGenerator, WeaponImpactKind, WindConfig, WindGenerator,
+    WeaponHandlingGenerator, WeaponHandlingKind, WeaponImpactConfig, WeaponImpactGenerator,
+    WeaponImpactKind, WindConfig, WindGenerator,
 };
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -47,9 +47,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);
     let output_dir = PathBuf::from(args.next().unwrap_or_else(|| DEFAULT_OUTPUT.to_owned()));
     let base_seed = match args.next() {
-        Some(value) => value.parse::<u64>().map_err(|_| {
-            format!("invalid seed {value:?}: expected an unsigned 64-bit integer")
-        })?,
+        Some(value) => value
+            .parse::<u64>()
+            .map_err(|_| format!("invalid seed {value:?}: expected an unsigned 64-bit integer"))?,
         None => DEFAULT_SEED,
     };
     if args.next().is_some() {
@@ -77,7 +77,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
         let mut generator = FootstepGenerator::new_for_surface(config, surface, seed)?;
-        pack.write_sample("footsteps", name, &format!("{surface:?}"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "footsteps",
+            name,
+            &format!("{surface:?}"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Generic impact baseline.
@@ -87,7 +94,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
     let seed = next_seed(base_seed, &mut sample_index);
     let mut generator = ImpactGenerator::new(config, seed)?;
-    pack.write_sample("impacts", "generic", "generic impact", seed, &mut generator, None)?;
+    pack.write_sample(
+        "impacts",
+        "generic",
+        "generic impact",
+        seed,
+        &mut generator,
+        None,
+    )?;
 
     // Weapon-contact kinds use representative target materials.
     let config = WeaponImpactConfig {
@@ -95,14 +109,46 @@ fn run() -> Result<(), Box<dyn Error>> {
         ..WeaponImpactConfig::default()
     };
     for (kind, material, name) in [
-        (WeaponImpactKind::Strike, ImpactMaterial::Metal, "strike-metal"),
-        (WeaponImpactKind::BladeClash, ImpactMaterial::Metal, "blade-clash-metal"),
-        (WeaponImpactKind::Parry, ImpactMaterial::Metal, "parry-metal"),
-        (WeaponImpactKind::Block, ImpactMaterial::Shield, "block-shield"),
-        (WeaponImpactKind::ProjectileImpact, ImpactMaterial::Stone, "projectile-impact-stone"),
-        (WeaponImpactKind::ShieldBash, ImpactMaterial::Shield, "shield-bash"),
-        (WeaponImpactKind::ArmorStrike, ImpactMaterial::Armor, "armor-strike"),
-        (WeaponImpactKind::ProjectileDeflection, ImpactMaterial::Metal, "projectile-deflection"),
+        (
+            WeaponImpactKind::Strike,
+            ImpactMaterial::Metal,
+            "strike-metal",
+        ),
+        (
+            WeaponImpactKind::BladeClash,
+            ImpactMaterial::Metal,
+            "blade-clash-metal",
+        ),
+        (
+            WeaponImpactKind::Parry,
+            ImpactMaterial::Metal,
+            "parry-metal",
+        ),
+        (
+            WeaponImpactKind::Block,
+            ImpactMaterial::Shield,
+            "block-shield",
+        ),
+        (
+            WeaponImpactKind::ProjectileImpact,
+            ImpactMaterial::Stone,
+            "projectile-impact-stone",
+        ),
+        (
+            WeaponImpactKind::ShieldBash,
+            ImpactMaterial::Shield,
+            "shield-bash",
+        ),
+        (
+            WeaponImpactKind::ArmorStrike,
+            ImpactMaterial::Armor,
+            "armor-strike",
+        ),
+        (
+            WeaponImpactKind::ProjectileDeflection,
+            ImpactMaterial::Metal,
+            "projectile-deflection",
+        ),
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
         let mut sample_config = config;
@@ -110,13 +156,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         sample_config.material = material;
         let mut generator = WeaponImpactGenerator::new(sample_config, seed)?;
         pack.write_sample(
-                        "weapon-impacts",
+            "weapon-impacts",
             name,
             &format!("{kind:?} / {material:?}"),
             seed,
             &mut generator,
             None,
-                    )?;
+        )?;
     }
 
     // Breakage material profiles.
@@ -135,7 +181,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.material = material;
         let mut generator = BreakageGenerator::new(sample_config, seed)?;
-        pack.write_sample("breakage", name, &format!("{material:?}"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "breakage",
+            name,
+            &format!("{material:?}"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Non-vocal damage profiles.
@@ -152,7 +205,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = DamageEffectGenerator::new(sample_config, seed)?;
-        pack.write_sample("damage", name, &format!("{kind:?}"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "damage",
+            name,
+            &format!("{kind:?}"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Nonverbal synthetic vocalizations.
@@ -171,7 +231,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = CharacterVocalizationGenerator::new(sample_config, seed)?;
-        pack.write_sample("vocalizations", name, &format!("{kind:?} (nonverbal synthetic cue)"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "vocalizations",
+            name,
+            &format!("{kind:?} (nonverbal synthetic cue)"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Character movement.
@@ -188,7 +255,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = CharacterActionGenerator::new(sample_config, seed)?;
-        pack.write_sample("character-actions", name, &format!("{kind:?}"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "character-actions",
+            name,
+            &format!("{kind:?}"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Weapon handling.
@@ -205,7 +279,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = WeaponHandlingGenerator::new(sample_config, seed)?;
-        pack.write_sample("weapon-handling", name, &format!("{kind:?} / Metal"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "weapon-handling",
+            name,
+            &format!("{kind:?} / Metal"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Clothing and carried-equipment movement.
@@ -222,7 +303,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = EquipmentMovementGenerator::new(sample_config, seed)?;
-        pack.write_sample("equipment-movement", name, &format!("{kind:?}"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "equipment-movement",
+            name,
+            &format!("{kind:?}"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // General object interactions use the default wood material.
@@ -242,7 +330,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = ObjectInteractionGenerator::new(sample_config, seed)?;
-        pack.write_sample("object-interactions", name, &format!("{kind:?} / Wood"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "object-interactions",
+            name,
+            &format!("{kind:?} / Wood"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Tool actions use representative target materials.
@@ -253,7 +348,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     for (kind, material, name) in [
         (ToolActionKind::Chop, ToolActionMaterial::Wood, "chop-wood"),
         (ToolActionKind::Dig, ToolActionMaterial::Earth, "dig-earth"),
-        (ToolActionKind::Scrape, ToolActionMaterial::Stone, "scrape-stone"),
+        (
+            ToolActionKind::Scrape,
+            ToolActionMaterial::Stone,
+            "scrape-stone",
+        ),
         (ToolActionKind::Saw, ToolActionMaterial::Wood, "saw-wood"),
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
@@ -288,7 +387,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = MechanicalActionGenerator::new(sample_config, seed)?;
-        pack.write_sample("mechanical-actions", name, &format!("{kind:?} / Metal"), seed, &mut generator, None)?;
+        pack.write_sample(
+            "mechanical-actions",
+            name,
+            &format!("{kind:?} / Metal"),
+            seed,
+            &mut generator,
+            None,
+        )?;
     }
 
     // Continuous ambience must retain one generator instance across its full render.
@@ -336,7 +442,6 @@ fn next_seed(base_seed: u64, sample_index: &mut u64) -> u64 {
     *sample_index = sample_index.wrapping_add(1);
     seed
 }
-
 
 struct PackWriter<'a> {
     output_dir: &'a Path,
@@ -415,7 +520,8 @@ impl<'a> PackWriter<'a> {
                 };
                 let pcm = (bounded * 32_768.0)
                     .round()
-                    .clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16;
+                    .clamp(f32::from(i16::MIN), f32::from(i16::MAX))
+                    as i16;
                 pcm_bytes.extend_from_slice(&pcm.to_le_bytes());
             }
             writer.write_all(&pcm_bytes)?;
@@ -427,8 +533,8 @@ impl<'a> PackWriter<'a> {
         let data_bytes = frames_written
             .checked_mul(u64::from(CHANNELS) * u64::from(BITS_PER_SAMPLE / 8))
             .ok_or("WAV data size overflow")?;
-        let data_size = u32::try_from(data_bytes)
-            .map_err(|_| "WAV exceeds the standard RIFF size limit")?;
+        let data_size =
+            u32::try_from(data_bytes).map_err(|_| "WAV exceeds the standard RIFF size limit")?;
         let riff_size = u32::try_from(
             36_u64
                 .checked_add(data_bytes)
@@ -494,11 +600,23 @@ mod tests {
         assert_eq!(&header[12..16], b"fmt ");
         assert_eq!(u32::from_le_bytes(header[16..20].try_into().unwrap()), 16);
         assert_eq!(u16::from_le_bytes(header[20..22].try_into().unwrap()), 1);
-        assert_eq!(u16::from_le_bytes(header[22..24].try_into().unwrap()), CHANNELS);
-        assert_eq!(u32::from_le_bytes(header[24..28].try_into().unwrap()), SAMPLE_RATE);
-        assert_eq!(u32::from_le_bytes(header[28..32].try_into().unwrap()), 192_000);
+        assert_eq!(
+            u16::from_le_bytes(header[22..24].try_into().unwrap()),
+            CHANNELS
+        );
+        assert_eq!(
+            u32::from_le_bytes(header[24..28].try_into().unwrap()),
+            SAMPLE_RATE
+        );
+        assert_eq!(
+            u32::from_le_bytes(header[28..32].try_into().unwrap()),
+            192_000
+        );
         assert_eq!(u16::from_le_bytes(header[32..34].try_into().unwrap()), 4);
-        assert_eq!(u16::from_le_bytes(header[34..36].try_into().unwrap()), BITS_PER_SAMPLE);
+        assert_eq!(
+            u16::from_le_bytes(header[34..36].try_into().unwrap()),
+            BITS_PER_SAMPLE
+        );
         assert_eq!(&header[36..40], b"data");
         assert_eq!(u32::from_le_bytes(header[40..44].try_into().unwrap()), 480);
     }
