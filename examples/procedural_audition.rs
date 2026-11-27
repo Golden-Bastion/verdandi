@@ -87,8 +87,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
     let seed = next_seed(base_seed, &mut sample_index);
     let mut generator = ImpactGenerator::new(config, seed)?;
-    write_sample(&output_dir, "impacts", "generic", "generic impact", seed, &mut generator, None, &mut manifest)?;
-    sample_count += 1;
+    pack.write_sample("impacts", "generic", "generic impact", seed, &mut generator, None)?;
 
     // Weapon-contact kinds use representative target materials.
     let config = WeaponImpactConfig {
@@ -110,7 +109,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         sample_config.kind = kind;
         sample_config.material = material;
         let mut generator = WeaponImpactGenerator::new(sample_config, seed)?;
-        write_sample(
+        pack.write_sample(
                         "weapon-impacts",
             name,
             &format!("{kind:?} / {material:?}"),
@@ -136,8 +135,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.material = material;
         let mut generator = BreakageGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "breakage", name, &format!("{material:?}"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("breakage", name, &format!("{material:?}"), seed, &mut generator, None)?;
     }
 
     // Non-vocal damage profiles.
@@ -154,8 +152,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = DamageEffectGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "damage", name, &format!("{kind:?}"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("damage", name, &format!("{kind:?}"), seed, &mut generator, None)?;
     }
 
     // Nonverbal synthetic vocalizations.
@@ -174,8 +171,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = CharacterVocalizationGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "vocalizations", name, &format!("{kind:?} (nonverbal synthetic cue)"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("vocalizations", name, &format!("{kind:?} (nonverbal synthetic cue)"), seed, &mut generator, None)?;
     }
 
     // Character movement.
@@ -192,8 +188,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = CharacterActionGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "character-actions", name, &format!("{kind:?}"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("character-actions", name, &format!("{kind:?}"), seed, &mut generator, None)?;
     }
 
     // Weapon handling.
@@ -210,8 +205,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = WeaponHandlingGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "weapon-handling", name, &format!("{kind:?} / Metal"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("weapon-handling", name, &format!("{kind:?} / Metal"), seed, &mut generator, None)?;
     }
 
     // Clothing and carried-equipment movement.
@@ -228,8 +222,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = EquipmentMovementGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "equipment-movement", name, &format!("{kind:?}"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("equipment-movement", name, &format!("{kind:?}"), seed, &mut generator, None)?;
     }
 
     // General object interactions use the default wood material.
@@ -249,8 +242,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = ObjectInteractionGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "object-interactions", name, &format!("{kind:?} / Wood"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("object-interactions", name, &format!("{kind:?} / Wood"), seed, &mut generator, None)?;
     }
 
     // Tool actions use representative target materials.
@@ -269,17 +261,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         sample_config.kind = kind;
         sample_config.material = material;
         let mut generator = ToolActionGenerator::new(sample_config, seed)?;
-        write_sample(
-            &output_dir,
+        pack.write_sample(
             "tool-actions",
             name,
             &format!("{kind:?} / {material:?}"),
             seed,
             &mut generator,
             None,
-            &mut manifest,
         )?;
-        sample_count += 1;
     }
 
     // Generic hinges, latches, locks, and cranks use the default metal profile.
@@ -299,8 +288,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         let mut sample_config = config;
         sample_config.kind = kind;
         let mut generator = MechanicalActionGenerator::new(sample_config, seed)?;
-        write_sample(&output_dir, "mechanical-actions", name, &format!("{kind:?} / Metal"), seed, &mut generator, None, &mut manifest)?;
-        sample_count += 1;
+        pack.write_sample("mechanical-actions", name, &format!("{kind:?} / Metal"), seed, &mut generator, None)?;
     }
 
     // Continuous ambience must retain one generator instance across its full render.
@@ -311,17 +299,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
     let seed = next_seed(base_seed, &mut sample_index);
     let mut generator = WindGenerator::new(config, seed)?;
-    write_sample(
-        &output_dir,
+    pack.write_sample(
         "ambience",
         "wind-5s",
         "wind (five-second continuous render)",
         seed,
         &mut generator,
         Some(ambience_frames),
-        &mut manifest,
     )?;
-    sample_count += 1;
 
     let config = RainConfig {
         sample_rate: SAMPLE_RATE,
@@ -329,17 +314,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
     let seed = next_seed(base_seed, &mut sample_index);
     let mut generator = RainGenerator::new(config, seed)?;
-    write_sample(
-        &output_dir,
+    pack.write_sample(
         "ambience",
         "rain-5s",
         "rain (five-second continuous render)",
         seed,
         &mut generator,
         Some(ambience_frames),
-        &mut manifest,
     )?;
-    sample_count += 1;
 
     let sample_count = pack.finish()?;
     println!(
