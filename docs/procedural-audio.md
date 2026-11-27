@@ -410,6 +410,26 @@ These profiles provide generic movement, friction, and contact layers; they do n
 hinge, lock, or machine. Use a host recording when a particular door, latch, or mechanism needs
 recognizable hardware detail.
 
+## Building a procedural audition pack
+
+The `procedural_audition` example renders the built-in generators to standalone WAV files so their profiles can be compared outside a game or audio device. It covers surface footsteps, generic impacts, all weapon-contact kinds, breakage materials, damage effects, nonverbal vocalizations, character movement, weapon handling, equipment movement, object interactions, tool actions, mechanical actions, wind, and rain.
+
+Run it without enabling Bevy:
+
+```sh
+cargo run --release --no-default-features --example procedural_audition
+```
+
+The default output directory is `target/audition-pack`. To choose another directory and base seed:
+
+```sh
+cargo run --release --no-default-features --example procedural_audition -- ./my-audition-pack 1234
+```
+
+The example uses 48 kHz stereo, signed 16-bit PCM WAV for every file. Finite generators are rendered until they report completion; wind and rain are each rendered for five seconds using one persistent generator instance. Each file gets a deterministic seed derived from the supplied base seed and its position in the export sequence. The generated README lists each file, profile, and seed.
+
+Generator default control values are retained, with the selected profile or representative material changed where needed to create comparisons. Files are not independently normalized, so relative output levels remain part of the audition. PCM conversion only bounds samples to the representable WAV range. The pack is a listening aid, not a declaration that any generated profile is final or acoustically approved.
+
 ## Generating continuous ambience
 
 The initial continuous generators are `WindGenerator` and `RainGenerator`. Their state persists between calls, so render successive blocks using the same generator instance.

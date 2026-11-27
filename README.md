@@ -69,6 +69,18 @@ Render a standalone WAV without Bevy or an audio device:
 cargo run --release --no-default-features --example render_wav -- 1234 ethereal 8 ethereal.wav
 ~~~
 
+Generate a complete procedural sound audition pack. By default, WAV files and a manifest are written under the ignored target/audition-pack directory:
+
+~~~sh
+cargo run --release --no-default-features --example procedural_audition
+~~~
+
+An output directory and deterministic base seed can be supplied:
+
+~~~sh
+cargo run --release --no-default-features --example procedural_audition -- ./my-audition-pack 1234
+~~~
+
 Run the interactive Bevy demo:
 
 ~~~sh

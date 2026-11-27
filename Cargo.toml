@@ -43,6 +43,9 @@ name = "render_wav"
 name = "sfz_audition"
 
 [[example]]
+name = "procedural_audition"
+
+[[example]]
 name = "demo"
 required-features = ["demo"]
 
