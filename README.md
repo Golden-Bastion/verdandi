@@ -23,7 +23,7 @@ The default feature enables the Bevy 0.20 plugin:
 
 ~~~toml
 [dependencies]
-verdandi = "0.8"
+verdandi = "0.9"
 ~~~
 
 ~~~rust
@@ -46,7 +46,7 @@ For a custom audio host without Bevy:
 
 ~~~toml
 [dependencies]
-verdandi = { version = "0.8", default-features = false }
+verdandi = { version = "0.9", default-features = false }
 ~~~
 
 Start with the [documentation index](docs/README.md). It contains integration guides, full examples, the public API map, and the real-time/ownership contract. The symbol-level reference is available on [docs.rs](https://docs.rs/verdandi/latest/verdandi/).
