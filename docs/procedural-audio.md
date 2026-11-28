@@ -6,7 +6,7 @@ Generators render interleaved stereo floating-point PCM into caller-owned buffer
 
 ## Choosing the Retro or Realistic sound set
 
-The original generators remain available unchanged through `verdandi::procedural::retro`. Existing top-level names such as `FootstepGenerator` and `WeaponHandlingGenerator` remain backward-compatible aliases in practice: their constructors and output are still the original Retro profiles.
+The original generators remain available unchanged through `verdandi::procedural::retro`. Existing top-level names such as `FootstepGenerator` and `WeaponHandlingGenerator` remain available and retain their original constructors and output; they are the original Retro implementations.
 
 Use `verdandi::procedural::realistic` for the matching Realistic family names. The realistic footstep generator builds a damped contact body and material-shaped friction; shallow water adds a broadband splash, water displacement, and independently timed droplets. The realistic weapon-handling generator uses action-specific scabbard friction and short fitting contacts. Other realistic families wrap the original event shape in deterministic broadband acoustic texture and a short decay tail.
 
