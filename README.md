@@ -12,6 +12,7 @@ Music is generated at runtime by default; no recorded music library is required.
 - Optional SFZ parsing and sample playback, with procedural fallback for unmatched notes.
 - Two selectable deterministic procedural sound sets: the original retro/stylized families and realistic-style variants with material-shaped footsteps, water splashes, scabbard friction, fitting contacts, transient-driven multi-band texture, and material-tuned friction, body resonance, and contact decay for impacts, breakage, object/tool actions, and mechanisms.
 - One-shot effects, persistent keyed loops, fades, independent music/effects/ambience buses, and voice limits.
+- Reusable procedural environmental acoustics for distance, occlusion, early reflections, and damped room tails.
 - Bounded decoded-PCM streaming for long effects and environmental audio.
 - An engine-independent core with an optional Bevy 0.20 integration.
 

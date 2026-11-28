@@ -33,6 +33,7 @@ pub mod prelude {
         Engine, InstrumentConfig, MusicConfig, MusicShared, MusicStatus, MusicStinger,
     };
     pub use crate::preset::{MusicPace, MusicPreset};
+    pub use crate::procedural::realistic::{EnvironmentalAcoustics, EnvironmentalAcousticsConfig};
     pub use crate::procedural::{realistic, retro};
     pub use crate::procedural::{
         BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,

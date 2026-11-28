@@ -14,15 +14,15 @@ use verdandi::procedural::realistic::{
     BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
     CharacterActionGenerator, CharacterActionKind, CharacterVocalizationConfig,
     CharacterVocalizationGenerator, CharacterVocalizationKind, DamageEffectConfig,
-    DamageEffectGenerator, DamageEffectKind, EquipmentMovementConfig, EquipmentMovementGenerator,
-    EquipmentMovementKind, FootstepConfig, FootstepGenerator, FootstepSurface, ImpactConfig,
-    ImpactGenerator, ImpactMaterial, MechanicalActionConfig, MechanicalActionGenerator,
-    MechanicalActionKind, MechanicalActionMaterial, ObjectInteractionConfig,
-    ObjectInteractionGenerator, ObjectInteractionKind, ObjectInteractionMaterial,
-    ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig, ToolActionGenerator,
-    ToolActionKind, ToolActionMaterial, WeaponHandlingConfig, WeaponHandlingGenerator,
-    WeaponHandlingKind, WeaponImpactConfig, WeaponImpactGenerator, WeaponImpactKind, WindConfig,
-    WindGenerator,
+    DamageEffectGenerator, DamageEffectKind, EnvironmentalAcoustics, EnvironmentalAcousticsConfig,
+    EquipmentMovementConfig, EquipmentMovementGenerator, EquipmentMovementKind, FootstepConfig,
+    FootstepGenerator, FootstepSurface, ImpactConfig, ImpactGenerator, ImpactMaterial,
+    MechanicalActionConfig, MechanicalActionGenerator, MechanicalActionKind,
+    MechanicalActionMaterial, ObjectInteractionConfig, ObjectInteractionGenerator,
+    ObjectInteractionKind, ObjectInteractionMaterial, ProceduralGenerator, RainConfig,
+    RainGenerator, ToolActionConfig, ToolActionGenerator, ToolActionKind, ToolActionMaterial,
+    WeaponHandlingConfig, WeaponHandlingGenerator, WeaponHandlingKind, WeaponImpactConfig,
+    WeaponImpactGenerator, WeaponImpactKind, WindConfig, WindGenerator,
 };
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -442,6 +442,62 @@ fn run() -> Result<(), Box<dyn Error>> {
             "mechanical-actions",
             name,
             &format!("{kind:?} / {material:?}"),
+            seed,
+            &mut generator,
+            None,
+        )?;
+    }
+
+    // Environmental responses use the same deterministic impact source for direct comparisons.
+    let seed = next_seed(base_seed, &mut sample_index);
+    let impact_config = ImpactConfig {
+        sample_rate: SAMPLE_RATE,
+        ..ImpactConfig::default()
+    };
+    for (name, description, environment) in [
+        (
+            "distant-open",
+            "distant source in open air",
+            EnvironmentalAcousticsConfig {
+                distance: 0.82,
+                ..EnvironmentalAcousticsConfig::default()
+            },
+        ),
+        (
+            "heavily-occluded",
+            "nearby source behind heavy obstruction",
+            EnvironmentalAcousticsConfig {
+                occlusion: 0.88,
+                ..EnvironmentalAcousticsConfig::default()
+            },
+        ),
+        (
+            "small-room",
+            "small reflective room",
+            EnvironmentalAcousticsConfig {
+                room_size: 0.28,
+                absorption: 0.72,
+                wet: 0.58,
+                ..EnvironmentalAcousticsConfig::default()
+            },
+        ),
+        (
+            "cavern",
+            "large reflective space with a long damped tail",
+            EnvironmentalAcousticsConfig {
+                room_size: 1.0,
+                absorption: 0.22,
+                wet: 0.82,
+                ..EnvironmentalAcousticsConfig::default()
+            },
+        ),
+    ] {
+        let source = ImpactGenerator::new(impact_config, seed)?;
+        let mut generator = EnvironmentalAcoustics::new(source, SAMPLE_RATE, environment)?;
+        pack.write_sample(
+            "environmental-acoustics",
+            name,
+            description,
             seed,
             &mut generator,
             None,
