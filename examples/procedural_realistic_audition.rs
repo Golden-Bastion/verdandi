@@ -19,10 +19,10 @@ use verdandi::procedural::realistic::{
     ImpactGenerator, ImpactMaterial, MechanicalActionConfig, MechanicalActionGenerator,
     MechanicalActionKind, MechanicalActionMaterial, ObjectInteractionConfig,
     ObjectInteractionGenerator, ObjectInteractionKind, ObjectInteractionMaterial,
-    ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig,
-    ToolActionGenerator, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
-    WeaponHandlingGenerator, WeaponHandlingKind, WeaponImpactConfig, WeaponImpactGenerator,
-    WeaponImpactKind, WindConfig, WindGenerator,
+    ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig, ToolActionGenerator,
+    ToolActionKind, ToolActionMaterial, WeaponHandlingConfig, WeaponHandlingGenerator,
+    WeaponHandlingKind, WeaponImpactConfig, WeaponImpactGenerator, WeaponImpactKind, WindConfig,
+    WindGenerator,
 };
 
 const SAMPLE_RATE: u32 = 48_000;

@@ -4,8 +4,8 @@
 //! parallel realistic-style variants. They use deterministic synthesis and fixed-size state;
 //! they do not load recordings or claim to be physical simulations.
 
-use super::{derive_seed, validate_rate, Rng, TAU};
 use super::acoustics::AcousticProfile;
+use super::{derive_seed, validate_rate, Rng, TAU};
 pub use super::{
     BreakageConfig, BreakageMaterial, CharacterActionConfig, CharacterActionKind,
     CharacterVocalizationConfig, CharacterVocalizationKind, DamageEffectConfig, DamageEffectKind,
@@ -204,10 +204,10 @@ macro_rules! acoustic_family {
 macro_rules! acoustic_family_with_profile {
     ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr, $profile_fn:ident) => {
         #[doc = concat!(
-            "Realistic-style acoustic variant of the original ",
-            stringify!($inner),
-            "."
-        )]
+                    "Realistic-style acoustic variant of the original ",
+                    stringify!($inner),
+                    "."
+                )]
         pub struct $name {
             inner: AcousticGenerator<super::$inner>,
         }
@@ -219,7 +219,12 @@ macro_rules! acoustic_family_with_profile {
                 let profile = $profile_fn(config);
                 let inner = super::$inner::new(config, seed)?;
                 let inner = AcousticGenerator::with_profile(
-                    inner, sample_rate, seed, $stream, $amount, profile,
+                    inner,
+                    sample_rate,
+                    seed,
+                    $stream,
+                    $amount,
+                    profile,
                 )?;
                 Ok(Self { inner })
             }
@@ -315,7 +320,6 @@ acoustic_family_with_profile!(
     0.22,
     mechanical_action_acoustic_profile
 );
-
 
 fn impact_acoustic_profile(config: ImpactConfig) -> AcousticProfile {
     let body = 48.0 + config.resonance * 115.0;
