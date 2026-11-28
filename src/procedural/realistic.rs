@@ -4,18 +4,17 @@
 //! parallel realistic-style variants. They use deterministic synthesis and fixed-size state;
 //! they do not load recordings or claim to be physical simulations.
 
+use super::{derive_seed, validate_rate, Rng, TAU};
 pub use super::{
     BreakageConfig, BreakageMaterial, CharacterActionConfig, CharacterActionKind,
-    CharacterVocalizationConfig, CharacterVocalizationKind, DamageEffectConfig,
-    DamageEffectKind, EquipmentMovementConfig, EquipmentMovementKind, FootstepConfig,
-    FootstepSurface, ImpactConfig, ImpactMaterial, MechanicalActionConfig,
-    MechanicalActionKind, MechanicalActionMaterial, ObjectInteractionConfig,
-    ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError, ProceduralGenerator,
-    RainConfig, ToolActionConfig, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
-    WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactKind, WindConfig,
-    MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
+    CharacterVocalizationConfig, CharacterVocalizationKind, DamageEffectConfig, DamageEffectKind,
+    EquipmentMovementConfig, EquipmentMovementKind, FootstepConfig, FootstepSurface, ImpactConfig,
+    ImpactMaterial, MechanicalActionConfig, MechanicalActionKind, MechanicalActionMaterial,
+    ObjectInteractionConfig, ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError,
+    ProceduralGenerator, RainConfig, ToolActionConfig, ToolActionKind, ToolActionMaterial,
+    WeaponHandlingConfig, WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig,
+    WeaponImpactKind, WindConfig, MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
 };
-use super::{derive_seed, validate_rate, Rng, TAU};
 
 /// Deterministic acoustic texture layered over an existing procedural family.
 ///
@@ -113,10 +112,7 @@ impl AcousticTexture {
         let noise = self.rng.next_f32() * 2.0 - 1.0;
         self.low_state += 0.018 * (noise - self.low_state);
         let high_texture = noise - self.low_state;
-        let texture = high_texture
-            * self.envelope
-            * self.amount
-            * (0.34 + transient * 0.90);
+        let texture = high_texture * self.envelope * self.amount * (0.34 + transient * 0.90);
         let low_texture = self.low_state * self.envelope * self.amount * 0.20;
         let dry = input * (1.0 - self.amount * 0.12);
         let sample = dry + texture + low_texture;
@@ -131,10 +127,10 @@ impl AcousticTexture {
 macro_rules! acoustic_family {
     ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr) => {
         #[doc = concat!(
-            "Realistic-style acoustic variant of the original ",
-            stringify!($inner),
-            "."
-        )]
+                    "Realistic-style acoustic variant of the original ",
+                    stringify!($inner),
+                    "."
+                )]
         pub struct $name {
             inner: AcousticGenerator<super::$inner>,
         }
@@ -144,13 +140,8 @@ macro_rules! acoustic_family {
             pub fn new(config: $config, seed: u64) -> Result<Self, ProceduralError> {
                 let sample_rate = config.sample_rate;
                 let inner = super::$inner::new(config, seed)?;
-                let inner = AcousticGenerator::with_stream(
-                    inner,
-                    sample_rate,
-                    seed,
-                    $stream,
-                    $amount,
-                )?;
+                let inner =
+                    AcousticGenerator::with_stream(inner, sample_rate, seed, $stream, $amount)?;
                 Ok(Self { inner })
             }
         }
@@ -177,7 +168,13 @@ acoustic_family!(
     4,
     0.20
 );
-acoustic_family!(BreakageGenerator, BreakageGenerator, BreakageConfig, 5, 0.28);
+acoustic_family!(
+    BreakageGenerator,
+    BreakageGenerator,
+    BreakageConfig,
+    5,
+    0.28
+);
 acoustic_family!(
     CharacterActionGenerator,
     CharacterActionGenerator,
@@ -199,8 +196,20 @@ acoustic_family!(
     8,
     0.22
 );
-acoustic_family!(DamageEffectGenerator, DamageEffectGenerator, DamageEffectConfig, 9, 0.27);
-acoustic_family!(ToolActionGenerator, ToolActionGenerator, ToolActionConfig, 10, 0.26);
+acoustic_family!(
+    DamageEffectGenerator,
+    DamageEffectGenerator,
+    DamageEffectConfig,
+    9,
+    0.27
+);
+acoustic_family!(
+    ToolActionGenerator,
+    ToolActionGenerator,
+    ToolActionConfig,
+    10,
+    0.26
+);
 acoustic_family!(
     CharacterVocalizationGenerator,
     CharacterVocalizationGenerator,
@@ -403,10 +412,8 @@ impl ProceduralGenerator for FootstepGenerator {
                 let footfall = low * body_envelope * 0.32;
                 splash + displacement + droplets + footfall
             } else {
-                let friction = high
-                    * body_envelope
-                    * self.texture_gain
-                    * (0.65 + self.brightness * 0.70);
+                let friction =
+                    high * body_envelope * self.texture_gain * (0.65 + self.brightness * 0.70);
                 let body = low * body_envelope * self.body_gain;
                 let modes = (mode_a + mode_b * 0.55) * body_envelope * self.mode_gain;
                 let granular = if matches!(
@@ -566,11 +573,9 @@ impl WeaponHandlingGenerator {
             WeaponHandlingKind::Sheathe => {
                 smoothstep(0.13, 0.29, progress) * (1.0 - smoothstep(0.73, 0.89, progress))
             }
-            WeaponHandlingKind::Reload => {
-                pulse(progress, 0.11, 0.055)
-                    .max(pulse(progress, 0.39, 0.06))
-                    .max(pulse(progress, 0.68, 0.055))
-            }
+            WeaponHandlingKind::Reload => pulse(progress, 0.11, 0.055)
+                .max(pulse(progress, 0.39, 0.06))
+                .max(pulse(progress, 0.68, 0.055)),
         }
     }
 }
@@ -601,17 +606,14 @@ impl ProceduralGenerator for WeaponHandlingGenerator {
                 * friction_envelope
                 * (0.78 + self.speed * 0.36);
             let body_envelope = 1.0 - smoothstep(0.78, 1.0, progress);
-            let body = self.deep_state
-                * body_gain
-                * (0.8 + self.weight * 0.4)
-                * body_envelope;
+            let body = self.deep_state * body_gain * (0.8 + self.weight * 0.4) * body_envelope;
             let contacts: f32 = self
                 .contacts
                 .iter()
                 .map(|contact| contact.sample(self.position, self.sample_rate, noise))
                 .sum();
-            let sample = (friction + body * (1.0 - friction_envelope * 0.55) + contacts)
-                * self.intensity;
+            let sample =
+                (friction + body * (1.0 - friction_envelope * 0.55) + contacts) * self.intensity;
             frame[0] = sample.clamp(-1.0, 1.0);
             frame[1] = frame[0];
             self.position += 1;
@@ -645,7 +647,9 @@ mod tests {
     }
 
     fn bounded(samples: &[f32]) {
-        assert!(samples.iter().all(|sample| sample.is_finite() && sample.abs() <= 1.0));
+        assert!(samples
+            .iter()
+            .all(|sample| sample.is_finite() && sample.abs() <= 1.0));
     }
 
     #[test]
@@ -693,7 +697,9 @@ mod tests {
         bounded(&water);
         bounded(&soil);
         assert_ne!(water, soil);
-        assert!(water[7_000..16_000].iter().any(|sample| sample.abs() > 0.0005));
+        assert!(water[7_000..16_000]
+            .iter()
+            .any(|sample| sample.abs() > 0.0005));
     }
 
     #[test]
@@ -703,12 +709,18 @@ mod tests {
             ..WeaponHandlingConfig::default()
         };
         let mut draw = WeaponHandlingGenerator::new(
-            WeaponHandlingConfig { kind: WeaponHandlingKind::Draw, ..config },
+            WeaponHandlingConfig {
+                kind: WeaponHandlingKind::Draw,
+                ..config
+            },
             0xD12A,
         )
         .unwrap();
         let mut sheathe = WeaponHandlingGenerator::new(
-            WeaponHandlingConfig { kind: WeaponHandlingKind::Sheathe, ..config },
+            WeaponHandlingConfig {
+                kind: WeaponHandlingKind::Sheathe,
+                ..config
+            },
             0xD12A,
         )
         .unwrap();
