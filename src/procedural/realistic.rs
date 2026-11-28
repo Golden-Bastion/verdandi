@@ -120,10 +120,10 @@ impl AcousticTexture {
 
         // A rising contact excites three independently tuned modes. Their state continues to
         // ring after the source transient has passed, unlike a static sine mixed into the event.
-        let excitation = (rise * 5.0 + input.abs() * 0.012) * (0.72 + noise * 0.28);
-        let resonance = self.modes[0].excite(excitation) * 0.010
-            + self.modes[1].excite(excitation) * 0.006
-            + self.modes[2].excite(excitation) * 0.003;
+        let excitation = rise * 0.24 * (0.72 + noise * 0.28);
+        let resonance = self.modes[0].excite(excitation) * 0.080
+            + self.modes[1].excite(excitation) * 0.045
+            + self.modes[2].excite(excitation) * 0.025;
 
         let dry = input * (1.0 - self.amount * 0.08);
         let sample = dry + broadband + body + resonance;
