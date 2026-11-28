@@ -5,7 +5,7 @@
 //! they do not load recordings or claim to be physical simulations.
 
 use super::acoustics::AcousticProfile;
-use super::{derive_seed, validate_rate, Rng, TAU};
+use super::{derive_seed, validate_rate, validate_unit, Rng, TAU};
 pub use super::{
     BreakageConfig, BreakageMaterial, CharacterActionConfig, CharacterActionKind,
     CharacterVocalizationConfig, CharacterVocalizationKind, DamageEffectConfig, DamageEffectKind,
