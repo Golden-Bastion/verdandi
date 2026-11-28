@@ -721,6 +721,80 @@ mod tests {
     }
 
     #[test]
+    fn realistic_footsteps_and_weapon_handling_are_block_deterministic() {
+        let footstep_config = FootstepConfig {
+            sample_rate: 48_000,
+            ..FootstepConfig::default()
+        };
+        let make_footstep = || {
+            FootstepGenerator::new_for_surface(
+                footstep_config,
+                FootstepSurface::ShallowWater,
+                0x5A1A,
+            )
+            .unwrap()
+        };
+        let mut footstep_whole = make_footstep();
+        let mut footstep_split = make_footstep();
+        let expected_footstep = render(&mut footstep_whole, 24_000);
+        let mut actual_footstep = render(&mut footstep_split, 1_337);
+        actual_footstep.extend(render(&mut footstep_split, 8_191));
+        actual_footstep.extend(render(&mut footstep_split, 14_472));
+        assert_eq!(expected_footstep, actual_footstep);
+
+        let handling_config = WeaponHandlingConfig {
+            sample_rate: 48_000,
+            ..WeaponHandlingConfig::default()
+        };
+        let make_handling = || {
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    kind: WeaponHandlingKind::Draw,
+                    ..handling_config
+                },
+                0x5A1A,
+            )
+            .unwrap()
+        };
+        let mut handling_whole = make_handling();
+        let mut handling_split = make_handling();
+        let expected_handling = render(&mut handling_whole, 26_000);
+        let mut actual_handling = render(&mut handling_split, 1_337);
+        actual_handling.extend(render(&mut handling_split, 8_191));
+        actual_handling.extend(render(&mut handling_split, 16_472));
+        assert_eq!(expected_handling, actual_handling);
+        bounded(&expected_footstep);
+        bounded(&expected_handling);
+        assert!(footstep_whole.is_finished());
+        assert!(handling_whole.is_finished());
+    }
+
+    #[test]
+    fn realistic_footsteps_and_weapon_handling_reject_invalid_configs() {
+        assert!(matches!(
+            FootstepGenerator::new_for_surface(
+                FootstepConfig {
+                    sample_rate: 1_000,
+                    ..FootstepConfig::default()
+                },
+                FootstepSurface::ShallowWater,
+                0,
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            WeaponHandlingGenerator::new(
+                WeaponHandlingConfig {
+                    speed: f32::NAN,
+                    ..WeaponHandlingConfig::default()
+                },
+                0,
+            ),
+            Err(ProceduralError::InvalidParameter)
+        ));
+    }
+
+    #[test]
     fn realistic_family_adapters_construct_and_render() {
         let mut wind = WindGenerator::new(
             WindConfig {
