@@ -17,8 +17,8 @@ use verdandi::procedural::realistic::{
     DamageEffectGenerator, DamageEffectKind, EquipmentMovementConfig, EquipmentMovementGenerator,
     EquipmentMovementKind, FootstepConfig, FootstepGenerator, FootstepSurface, ImpactConfig,
     ImpactGenerator, ImpactMaterial, MechanicalActionConfig, MechanicalActionGenerator,
-    MechanicalActionKind, ObjectInteractionConfig, ObjectInteractionGenerator,
-    ObjectInteractionKind, ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig,
+    MechanicalActionKind, MechanicalActionMaterial, ObjectInteractionConfig, ObjectInteractionGenerator,
+    ObjectInteractionKind, ObjectInteractionMaterial, ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig,
     ToolActionGenerator, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
     WeaponHandlingGenerator, WeaponHandlingKind, WeaponImpactConfig, WeaponImpactGenerator,
     WeaponImpactKind, WindConfig, WindGenerator,
@@ -313,27 +313,28 @@ fn run() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-    // General object interactions use the default wood material.
+    // Object interactions compare representative wood, stone, glass, and metal responses.
     let config = ObjectInteractionConfig {
         sample_rate: SAMPLE_RATE,
         ..ObjectInteractionConfig::default()
     };
-    for (kind, name) in [
-        (ObjectInteractionKind::Pickup, "pickup"),
-        (ObjectInteractionKind::Place, "place"),
-        (ObjectInteractionKind::Drop, "drop"),
-        (ObjectInteractionKind::Open, "open"),
-        (ObjectInteractionKind::Close, "close"),
-        (ObjectInteractionKind::Toggle, "toggle"),
+    for (kind, material, name) in [
+        (ObjectInteractionKind::Pickup, ObjectInteractionMaterial::Wood, "pickup-wood"),
+        (ObjectInteractionKind::Place, ObjectInteractionMaterial::Stone, "place-stone"),
+        (ObjectInteractionKind::Drop, ObjectInteractionMaterial::Glass, "drop-glass"),
+        (ObjectInteractionKind::Open, ObjectInteractionMaterial::Wood, "open-wood"),
+        (ObjectInteractionKind::Close, ObjectInteractionMaterial::Metal, "close-metal"),
+        (ObjectInteractionKind::Toggle, ObjectInteractionMaterial::Metal, "toggle-metal"),
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
         let mut sample_config = config;
         sample_config.kind = kind;
+        sample_config.material = material;
         let mut generator = ObjectInteractionGenerator::new(sample_config, seed)?;
         pack.write_sample(
             "object-interactions",
             name,
-            &format!("{kind:?} / Wood"),
+            &format!("{kind:?} / {material:?}"),
             seed,
             &mut generator,
             None,
@@ -370,27 +371,28 @@ fn run() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-    // Generic hinges, latches, locks, and cranks use the default metal profile.
+    // Mechanism actions compare wood, metal, and stone fixture responses.
     let config = MechanicalActionConfig {
         sample_rate: SAMPLE_RATE,
         ..MechanicalActionConfig::default()
     };
-    for (kind, name) in [
-        (MechanicalActionKind::HingeOpen, "hinge-open"),
-        (MechanicalActionKind::HingeClose, "hinge-close"),
-        (MechanicalActionKind::LatchEngage, "latch-engage"),
-        (MechanicalActionKind::LatchRelease, "latch-release"),
-        (MechanicalActionKind::LockTurn, "lock-turn"),
-        (MechanicalActionKind::Crank, "crank"),
+    for (kind, material, name) in [
+        (MechanicalActionKind::HingeOpen, MechanicalActionMaterial::Wood, "hinge-open-wood"),
+        (MechanicalActionKind::HingeClose, MechanicalActionMaterial::Wood, "hinge-close-wood"),
+        (MechanicalActionKind::LatchEngage, MechanicalActionMaterial::Metal, "latch-engage-metal"),
+        (MechanicalActionKind::LatchRelease, MechanicalActionMaterial::Metal, "latch-release-metal"),
+        (MechanicalActionKind::LockTurn, MechanicalActionMaterial::Metal, "lock-turn-metal"),
+        (MechanicalActionKind::Crank, MechanicalActionMaterial::Stone, "crank-stone"),
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
         let mut sample_config = config;
         sample_config.kind = kind;
+        sample_config.material = material;
         let mut generator = MechanicalActionGenerator::new(sample_config, seed)?;
         pack.write_sample(
             "mechanical-actions",
             name,
-            &format!("{kind:?} / Metal"),
+            &format!("{kind:?} / {material:?}"),
             seed,
             &mut generator,
             None,

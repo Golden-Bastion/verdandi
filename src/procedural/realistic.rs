@@ -916,7 +916,7 @@ mod tests {
         )
         .unwrap();
         let tail = render(&mut generator, 24_000);
-        assert!(tail[18_240..].iter().any(|sample| sample.abs() > 0.00001));
+        assert!(tail[36_480..].iter().any(|sample| sample.abs() > 0.00001));
         assert!(!generator.is_finished());
         render(&mut generator, 96_000);
         assert!(generator.is_finished());
