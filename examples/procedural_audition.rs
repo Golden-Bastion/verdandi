@@ -1,8 +1,8 @@
-//! Render every built-in procedural sound family to a local WAV audition pack.
+//! Render the Retro procedural sound family set to a local WAV audition pack.
 //!
 //! Run with:
 //! cargo run --release --no-default-features --example procedural_audition
-//! cargo run --release --no-default-features --example procedural_audition -- /path/to/output 1234
+//! cargo run --release --no-default-features --example procedural_audition -- /path/to/retro-output 1234
 
 use std::env;
 use std::error::Error;
@@ -10,7 +10,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use verdandi::prelude::{
+use verdandi::procedural::retro::{
     BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
     CharacterActionGenerator, CharacterActionKind, CharacterVocalizationConfig,
     CharacterVocalizationGenerator, CharacterVocalizationKind, DamageEffectConfig,
@@ -29,7 +29,7 @@ const CHANNELS: u16 = 2;
 const BITS_PER_SAMPLE: u16 = 16;
 const CHUNK_FRAMES: usize = 256;
 const AMBIENCE_SECONDS: usize = 5;
-const DEFAULT_OUTPUT: &str = "target/audition-pack";
+const DEFAULT_OUTPUT: &str = "target/retro-audition-pack";
 const DEFAULT_SEED: u64 = 0x5eed;
 
 fn main() {
