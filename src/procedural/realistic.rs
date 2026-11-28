@@ -1,0 +1,680 @@
+//! More acoustically detailed procedural sound families.
+//!
+//! The original generators remain available through the retro module. This module provides
+//! parallel realistic-style variants. They use deterministic synthesis and fixed-size state;
+//! they do not load recordings or claim to be physical simulations.
+
+pub use super::{
+    BreakageConfig, BreakageMaterial, CharacterActionConfig, CharacterActionKind,
+    CharacterVocalizationConfig, CharacterVocalizationKind, DamageEffectConfig,
+    DamageEffectKind, EquipmentMovementConfig, EquipmentMovementKind, FootstepConfig,
+    FootstepSurface, ImpactConfig, ImpactMaterial, MechanicalActionConfig,
+    MechanicalActionKind, MechanicalActionMaterial, ObjectInteractionConfig,
+    ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError, ProceduralGenerator,
+    RainConfig, ToolActionConfig, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
+    WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactKind, WindConfig,
+};
+use super::{derive_seed, validate_rate, Rng, TAU};
+
+/// Deterministic acoustic texture layered over an existing procedural family.
+///
+/// This adapter adds subtle broadband detail, transient-sensitive texture, and a short natural
+/// decay tail. Footsteps and weapon handling have dedicated implementations because those sounds
+/// need family-specific physical cues.
+pub struct AcousticGenerator<G> {
+    inner: G,
+    texture: AcousticTexture,
+}
+
+impl<G: ProceduralGenerator> AcousticGenerator<G> {
+    /// Wrap an existing generator in the realistic acoustic-texture layer.
+    ///
+    /// The seed controls only the additional texture; it does not alter the wrapped generator's
+    /// random stream or output.
+    pub fn new(inner: G, sample_rate: u32, seed: u64) -> Result<Self, ProceduralError> {
+        Self::with_stream(inner, sample_rate, seed, 0)
+    }
+
+    fn with_stream(
+        inner: G,
+        sample_rate: u32,
+        seed: u64,
+        stream: u64,
+    ) -> Result<Self, ProceduralError> {
+        validate_rate(sample_rate)?;
+        Ok(Self {
+            inner,
+            texture: AcousticTexture::new(sample_rate, seed, stream),
+        })
+    }
+
+    /// Recover the wrapped generator.
+    pub fn into_inner(self) -> G {
+        self.inner
+    }
+}
+
+impl<G: ProceduralGenerator> ProceduralGenerator for AcousticGenerator<G> {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        self.inner.render(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
+            let mid = (frame[0] + frame[1]) * 0.5;
+            let side = (frame[0] - frame[1]) * 0.5;
+            let enhanced = self.texture.process(mid);
+            frame[0] = (enhanced + side).clamp(-1.0, 1.0);
+            frame[1] = (enhanced - side).clamp(-1.0, 1.0);
+        }
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.inner.is_finished() && self.texture.is_quiet()
+    }
+}
+
+struct AcousticTexture {
+    rng: Rng,
+    low_state: f32,
+    envelope: f32,
+    previous: f32,
+    attack: f32,
+    release: f32,
+}
+
+impl AcousticTexture {
+    fn new(sample_rate: u32, seed: u64, stream: u64) -> Self {
+        let rate = sample_rate as f32;
+        Self {
+            rng: Rng::new(derive_seed(seed, 0x4143_4F55, stream)),
+            low_state: 0.0,
+            envelope: 0.0,
+            previous: 0.0,
+            attack: 1.0 - (-1.0 / (rate * 0.004)).exp(),
+            release: 1.0 - (-1.0 / (rate * 0.075)).exp(),
+        }
+    }
+
+    fn process(&mut self, input: f32) -> f32 {
+        let level = input.abs().min(1.0);
+        let transient = (input - self.previous).abs().min(1.0);
+        self.previous = input;
+        let coefficient = if level > self.envelope {
+            self.attack
+        } else {
+            self.release
+        };
+        self.envelope += coefficient * (level - self.envelope);
+
+        let noise = self.rng.next_f32() * 2.0 - 1.0;
+        self.low_state += 0.018 * (noise - self.low_state);
+        let high_texture = noise - self.low_state;
+        let texture = high_texture * self.envelope * (0.014 + transient * 0.055);
+        let low_texture = self.low_state * self.envelope * 0.018;
+        let sample = input * 0.985 + texture + low_texture;
+        (sample - sample * sample * sample * 0.08).clamp(-1.0, 1.0)
+    }
+
+    fn is_quiet(&self) -> bool {
+        self.envelope < 0.0001
+    }
+}
+
+macro_rules! acoustic_family {
+    ($name:ident, $inner:ident, $config:ident, $stream:expr) => {
+        #[doc = concat!("Realistic-style acoustic variant of the original ", stringify!($inner), ".")]
+        pub struct $name {
+            inner: AcousticGenerator<super::$inner>,
+        }
+
+        impl $name {
+            /// Construct the realistic-style family with deterministic acoustic texture.
+            pub fn new(config: $config, seed: u64) -> Result<Self, ProceduralError> {
+                let sample_rate = config.sample_rate;
+                let inner = super::$inner::new(config, seed)?;
+                let inner = AcousticGenerator::with_stream(inner, sample_rate, seed, $stream)?;
+                Ok(Self { inner })
+            }
+        }
+
+        impl ProceduralGenerator for $name {
+            fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+                self.inner.render(output)
+            }
+
+            fn is_finished(&self) -> bool {
+                self.inner.is_finished()
+            }
+        }
+    };
+}
+
+acoustic_family!(WindGenerator, WindGenerator, WindConfig, 1);
+acoustic_family!(RainGenerator, RainGenerator, RainConfig, 2);
+acoustic_family!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3);
+acoustic_family!(WeaponImpactGenerator, WeaponImpactGenerator, WeaponImpactConfig, 4);
+acoustic_family!(BreakageGenerator, BreakageGenerator, BreakageConfig, 5);
+acoustic_family!(CharacterActionGenerator, CharacterActionGenerator, CharacterActionConfig, 6);
+acoustic_family!(EquipmentMovementGenerator, EquipmentMovementGenerator, EquipmentMovementConfig, 7);
+acoustic_family!(ObjectInteractionGenerator, ObjectInteractionGenerator, ObjectInteractionConfig, 8);
+acoustic_family!(DamageEffectGenerator, DamageEffectGenerator, DamageEffectConfig, 9);
+acoustic_family!(ToolActionGenerator, ToolActionGenerator, ToolActionConfig, 10);
+acoustic_family!(CharacterVocalizationGenerator, CharacterVocalizationGenerator, CharacterVocalizationConfig, 11);
+acoustic_family!(MechanicalActionGenerator, MechanicalActionGenerator, MechanicalActionConfig, 12);
+
+const WATER_DROPLETS: usize = 7;
+
+#[derive(Clone, Copy)]
+struct WaterDroplet {
+    start: u32,
+    duration: u32,
+    amplitude: f32,
+    frequency: f32,
+    phase: f32,
+    decay: f32,
+}
+
+impl WaterDroplet {
+    const SILENT: Self = Self {
+        start: u32::MAX,
+        duration: 0,
+        amplitude: 0.0,
+        frequency: 0.0,
+        phase: 0.0,
+        decay: 1.0,
+    };
+
+    fn sample(self, position: u32, sample_rate: f32, noise: f32) -> f32 {
+        if position < self.start {
+            return 0.0;
+        }
+        let age = position - self.start;
+        if age >= self.duration {
+            return 0.0;
+        }
+        let elapsed = age as f32 / sample_rate;
+        let envelope = (-elapsed * self.decay).exp();
+        let burst = noise * (-elapsed * 95.0).exp();
+        let ripple = (TAU * (self.phase + elapsed * self.frequency)).sin() * 0.16;
+        self.amplitude * envelope * (burst * 0.72 + ripple)
+    }
+}
+
+/// Finite deterministic footstep generator with material-shaped contact and natural texture.
+///
+/// Shallow water includes a broadband splash, displaced-water body, and independently timed
+/// droplets. Other surfaces combine a damped body, filtered friction, and short material modes.
+pub struct FootstepGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    brightness: f32,
+    surface: FootstepSurface,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    low_state: f32,
+    body_state: f32,
+    mode_phase_a: f32,
+    mode_phase_b: f32,
+    body_gain: f32,
+    texture_gain: f32,
+    mode_gain: f32,
+    mode_frequency_a: f32,
+    mode_frequency_b: f32,
+    body_decay: f32,
+    droplets: [WaterDroplet; WATER_DROPLETS],
+}
+
+impl FootstepGenerator {
+    /// Construct a realistic-style generic soil footstep.
+    pub fn new(config: FootstepConfig, seed: u64) -> Result<Self, ProceduralError> {
+        Self::new_for_surface(config, FootstepSurface::Dirt, seed)
+    }
+
+    /// Construct a realistic-style footstep for a known ground surface.
+    pub fn new_for_surface(
+        config: FootstepConfig,
+        surface: FootstepSurface,
+        seed: u64,
+    ) -> Result<Self, ProceduralError> {
+        super::validate_rate(config.sample_rate)?;
+        super::validate_unit(config.intensity)?;
+        super::validate_unit(config.brightness)?;
+
+        let (body_gain, texture_gain, mode_gain, mode_a, mode_b, body_decay) = match surface {
+            FootstepSurface::Dirt => (0.34, 0.15, 0.12, 78.0, 163.0, 13.0),
+            FootstepSurface::Grass => (0.22, 0.19, 0.055, 92.0, 218.0, 17.0),
+            FootstepSurface::Gravel => (0.28, 0.27, 0.07, 118.0, 264.0, 15.0),
+            FootstepSurface::Wood => (0.34, 0.075, 0.18, 142.0, 386.0, 12.0),
+            FootstepSurface::Stone => (0.32, 0.085, 0.15, 168.0, 492.0, 16.0),
+            FootstepSurface::Metal => (0.19, 0.055, 0.22, 318.0, 1_160.0, 21.0),
+            FootstepSurface::ShallowWater => (0.28, 0.46, 0.035, 64.0, 174.0, 10.0),
+            FootstepSurface::Snow => (0.25, 0.22, 0.035, 104.0, 232.0, 19.0),
+        };
+
+        let sample_rate = config.sample_rate as f32;
+        let total_seconds = if surface == FootstepSurface::ShallowWater {
+            0.42
+        } else if surface == FootstepSurface::Gravel || surface == FootstepSurface::Snow {
+            0.31
+        } else {
+            0.27
+        };
+        let mut rng = Rng::new(derive_seed(seed, 0x5246_4F4F, surface as u64));
+        let mode_phase_a = rng.next_f32();
+        let mode_phase_b = rng.next_f32();
+        let mode_frequency_a = mode_a * (0.94 + rng.next_f32() * 0.12);
+        let mode_frequency_b = mode_b * (0.92 + rng.next_f32() * 0.16);
+        let mut droplets = [WaterDroplet::SILENT; WATER_DROPLETS];
+        if surface == FootstepSurface::ShallowWater {
+            for droplet in &mut droplets {
+                let start = (sample_rate * (0.012 + rng.next_f32() * 0.17)) as u32;
+                let duration = (sample_rate * (0.035 + rng.next_f32() * 0.055)) as u32;
+                *droplet = WaterDroplet {
+                    start,
+                    duration,
+                    amplitude: 0.055 + rng.next_f32() * 0.075,
+                    frequency: 420.0 + rng.next_f32() * 1_850.0,
+                    phase: rng.next_f32(),
+                    decay: 32.0 + rng.next_f32() * 42.0,
+                };
+            }
+        }
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            brightness: config.brightness,
+            surface,
+            position: 0,
+            total: (sample_rate * total_seconds) as u32,
+            rng,
+            low_state: 0.0,
+            body_state: 0.0,
+            mode_phase_a,
+            mode_phase_b,
+            body_gain,
+            texture_gain,
+            mode_gain,
+            mode_frequency_a,
+            mode_frequency_b,
+            body_decay,
+            droplets,
+        })
+    }
+}
+
+impl ProceduralGenerator for FootstepGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        super::validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let elapsed = self.position as f32 / self.sample_rate;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.low_state += 0.055 * (noise - self.low_state);
+            self.body_state += 0.014 * (noise - self.body_state);
+            let high = noise - self.low_state;
+            let low = self.body_state;
+            let attack = 1.0 - (-elapsed * 240.0).exp();
+            let body_envelope = attack * (-elapsed * self.body_decay).exp();
+            let mode_a =
+                (TAU * self.mode_phase_a).sin() * (-elapsed * (self.body_decay * 1.8)).exp();
+            let mode_b =
+                (TAU * self.mode_phase_b).sin() * (-elapsed * (self.body_decay * 2.7)).exp();
+
+            let sample = if self.surface == FootstepSurface::ShallowWater {
+                let splash_envelope = attack * (-elapsed * 18.0).exp();
+                let splash = high * splash_envelope * (0.30 + self.brightness * 0.20);
+                let displacement = low * splash_envelope * 0.34;
+                let droplets: f32 = self
+                    .droplets
+                    .iter()
+                    .map(|drop| drop.sample(self.position, self.sample_rate, high))
+                    .sum();
+                let footfall = low * body_envelope * 0.32;
+                splash + displacement + droplets + footfall
+            } else {
+                let friction = high
+                    * body_envelope
+                    * self.texture_gain
+                    * (0.78 + self.brightness * 0.55);
+                let body = low * body_envelope * self.body_gain;
+                let modes = (mode_a + mode_b * 0.55) * body_envelope * self.mode_gain;
+                let granular = if matches!(
+                    self.surface,
+                    FootstepSurface::Gravel | FootstepSurface::Snow
+                ) {
+                    high * (-elapsed * 24.0).exp() * self.texture_gain * 0.20
+                } else {
+                    0.0
+                };
+                body + friction + modes + granular
+            };
+
+            frame[0] = (sample * self.intensity).clamp(-1.0, 1.0);
+            frame[1] = frame[0];
+            self.mode_phase_a =
+                (self.mode_phase_a + self.mode_frequency_a / self.sample_rate).rem_euclid(1.0);
+            self.mode_phase_b =
+                (self.mode_phase_b + self.mode_frequency_b / self.sample_rate).rem_euclid(1.0);
+            self.position += 1;
+        }
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
+const WEAPON_CONTACTS: usize = 4;
+
+#[derive(Clone, Copy)]
+struct WeaponContact {
+    start: u32,
+    duration: u32,
+    amplitude: f32,
+    frequency_a: f32,
+    frequency_b: f32,
+    phase_a: f32,
+    phase_b: f32,
+    decay: f32,
+}
+
+impl WeaponContact {
+    const SILENT: Self = Self {
+        start: u32::MAX,
+        duration: 0,
+        amplitude: 0.0,
+        frequency_a: 0.0,
+        frequency_b: 0.0,
+        phase_a: 0.0,
+        phase_b: 0.0,
+        decay: 1.0,
+    };
+
+    fn sample(self, position: u32, sample_rate: f32, noise: f32) -> f32 {
+        if position < self.start {
+            return 0.0;
+        }
+        let age = position - self.start;
+        if age >= self.duration {
+            return 0.0;
+        }
+        let elapsed = age as f32 / sample_rate;
+        let envelope = (-elapsed * self.decay).exp();
+        let mode_a = (TAU * (self.phase_a + elapsed * self.frequency_a)).sin() * 0.26;
+        let mode_b = (TAU * (self.phase_b + elapsed * self.frequency_b)).sin() * 0.14;
+        let transient = noise * (-elapsed * 115.0).exp() * 0.62;
+        self.amplitude * envelope * (transient + mode_a + mode_b)
+    }
+}
+
+/// Finite deterministic draw, sheathe, and reload generator with friction and discrete contacts.
+///
+/// The realistic version does not use a continuous pitch sweep. Drawing and sheathing use
+/// differently timed scabbard friction, while fixed-frequency, quickly damped modes provide
+/// small fitting and seating contacts.
+pub struct WeaponHandlingGenerator {
+    sample_rate: f32,
+    intensity: f32,
+    weight: f32,
+    speed: f32,
+    material: WeaponHandlingMaterial,
+    kind: WeaponHandlingKind,
+    position: u32,
+    total: u32,
+    rng: Rng,
+    low_state: f32,
+    mid_state: f32,
+    deep_state: f32,
+    contacts: [WeaponContact; WEAPON_CONTACTS],
+}
+
+impl WeaponHandlingGenerator {
+    /// Construct a realistic-style weapon draw, sheathe, or reload sound.
+    pub fn new(config: WeaponHandlingConfig, seed: u64) -> Result<Self, ProceduralError> {
+        super::validate_rate(config.sample_rate)?;
+        super::validate_unit(config.intensity)?;
+        super::validate_unit(config.weight)?;
+        super::validate_unit(config.speed)?;
+
+        let sample_rate = config.sample_rate as f32;
+        let (base_duration, _, _, _, _, event_count, _) = config.kind.profile();
+        let duration = base_duration * (1.3 - config.speed * 0.6);
+        let total = (sample_rate * duration) as u32;
+        let mut rng = Rng::new(derive_seed(seed, 0x5257_4844, config.kind as u64));
+        let (base_frequency_a, base_frequency_b, amplitude, decay) = match config.material {
+            WeaponHandlingMaterial::Metal => (1_180.0, 2_240.0, 0.19, 34.0),
+            WeaponHandlingMaterial::Wood => (286.0, 540.0, 0.13, 24.0),
+            WeaponHandlingMaterial::Leather => (420.0, 760.0, 0.075, 29.0),
+        };
+        let heft = 1.12 - config.weight * 0.26;
+        let positions = match config.kind {
+            WeaponHandlingKind::Draw => [0.035, 0.90, 0.0, 0.0],
+            WeaponHandlingKind::Sheathe => [0.17, 0.93, 0.0, 0.0],
+            WeaponHandlingKind::Reload => [0.09, 0.36, 0.65, 0.91],
+        };
+        let mut contacts = [WeaponContact::SILENT; WEAPON_CONTACTS];
+        for index in 0..event_count {
+            let jitter = (rng.next_f32() - 0.5) * 0.035;
+            let progress = (positions[index] + jitter).clamp(0.015, 0.98);
+            let start = (total as f32 * progress) as u32;
+            contacts[index] = WeaponContact {
+                start,
+                duration: (sample_rate * (0.045 + rng.next_f32() * 0.035)) as u32,
+                amplitude: amplitude * (0.72 + rng.next_f32() * 0.50) * (0.9 + config.weight * 0.2),
+                frequency_a: base_frequency_a * heft * (0.9 + rng.next_f32() * 0.2),
+                frequency_b: base_frequency_b * heft * (0.9 + rng.next_f32() * 0.2),
+                phase_a: rng.next_f32(),
+                phase_b: rng.next_f32(),
+                decay: decay * (0.8 + rng.next_f32() * 0.4),
+            };
+        }
+
+        Ok(Self {
+            sample_rate,
+            intensity: config.intensity,
+            weight: config.weight,
+            speed: config.speed,
+            material: config.material,
+            kind: config.kind,
+            position: 0,
+            total,
+            rng,
+            low_state: 0.0,
+            mid_state: 0.0,
+            deep_state: 0.0,
+            contacts,
+        })
+    }
+
+    fn friction_envelope(&self, progress: f32) -> f32 {
+        match self.kind {
+            WeaponHandlingKind::Draw => {
+                smoothstep(0.045, 0.20, progress) * (1.0 - smoothstep(0.76, 0.93, progress))
+            }
+            WeaponHandlingKind::Sheathe => {
+                smoothstep(0.13, 0.29, progress) * (1.0 - smoothstep(0.73, 0.89, progress))
+            }
+            WeaponHandlingKind::Reload => {
+                pulse(progress, 0.11, 0.055)
+                    .max(pulse(progress, 0.39, 0.06))
+                    .max(pulse(progress, 0.68, 0.055))
+            }
+        }
+    }
+}
+
+impl ProceduralGenerator for WeaponHandlingGenerator {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        super::validate_output(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
+            if self.position >= self.total {
+                frame.fill(0.0);
+                continue;
+            }
+            let progress = self.position as f32 / self.total as f32;
+            let noise = self.rng.next_f32() * 2.0 - 1.0;
+            self.low_state += 0.12 * (noise - self.low_state);
+            self.mid_state += 0.038 * (self.low_state - self.mid_state);
+            self.deep_state += 0.009 * (noise - self.deep_state);
+            let high = noise - self.low_state;
+            let mid = self.low_state - self.mid_state;
+            let friction_envelope = self.friction_envelope(progress);
+            let (high_gain, mid_gain, body_gain) = match self.material {
+                WeaponHandlingMaterial::Metal => (0.22, 0.085, 0.12),
+                WeaponHandlingMaterial::Wood => (0.095, 0.13, 0.20),
+                WeaponHandlingMaterial::Leather => (0.055, 0.17, 0.16),
+            };
+            let friction = (high * high_gain + mid * mid_gain)
+                * friction_envelope
+                * (0.78 + self.speed * 0.36);
+            let body = self.deep_state * body_gain * (0.8 + self.weight * 0.4);
+            let contacts: f32 = self
+                .contacts
+                .iter()
+                .map(|contact| contact.sample(self.position, self.sample_rate, noise))
+                .sum();
+            let sample = (friction + body * (1.0 - friction_envelope * 0.55) + contacts)
+                * self.intensity;
+            frame[0] = sample.clamp(-1.0, 1.0);
+            frame[1] = frame[0];
+            self.position += 1;
+        }
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.position >= self.total
+    }
+}
+
+fn smoothstep(start: f32, end: f32, value: f32) -> f32 {
+    let t = ((value - start) / (end - start)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn pulse(value: f32, center: f32, width: f32) -> f32 {
+    let distance = (value - center) / width;
+    (-distance * distance * 4.0).exp()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn render<G: ProceduralGenerator + ?Sized>(generator: &mut G, frames: usize) -> Vec<f32> {
+        let mut output = vec![0.0; frames * 2];
+        generator.render(&mut output).unwrap();
+        output
+    }
+
+    fn bounded(samples: &[f32]) {
+        assert!(samples.iter().all(|sample| sample.is_finite() && sample.abs() <= 1.0));
+    }
+
+    #[test]
+    fn acoustic_layer_is_deterministic_and_keeps_render_block_continuity() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let make = || {
+            AcousticGenerator::new(
+                super::super::ImpactGenerator::new(config, 77).unwrap(),
+                config.sample_rate,
+                77,
+            )
+            .unwrap()
+        };
+        let mut whole = make();
+        let mut split = make();
+        let expected = render(&mut whole, 24_000);
+        let mut actual = render(&mut split, 333);
+        actual.extend(render(&mut split, 7_777));
+        actual.extend(render(&mut split, 15_890));
+        assert_eq!(expected, actual);
+        bounded(&expected);
+
+        let mut retro = super::super::ImpactGenerator::new(config, 77).unwrap();
+        assert_ne!(expected, render(&mut retro, 24_000));
+    }
+
+    #[test]
+    fn realistic_footsteps_are_seeded_distinct_and_water_has_a_splash_tail() {
+        let config = FootstepConfig {
+            sample_rate: 48_000,
+            ..FootstepConfig::default()
+        };
+        let mut water_a =
+            FootstepGenerator::new_for_surface(config, FootstepSurface::ShallowWater, 91).unwrap();
+        let mut water_b =
+            FootstepGenerator::new_for_surface(config, FootstepSurface::ShallowWater, 91).unwrap();
+        let mut dirt =
+            FootstepGenerator::new_for_surface(config, FootstepSurface::Dirt, 91).unwrap();
+        let water = render(&mut water_a, 24_000);
+        assert_eq!(water, render(&mut water_b, 24_000));
+        let soil = render(&mut dirt, 24_000);
+        bounded(&water);
+        bounded(&soil);
+        assert_ne!(water, soil);
+        assert!(water[7_000..16_000].iter().any(|sample| sample.abs() > 0.0005));
+    }
+
+    #[test]
+    fn realistic_weapon_handling_separates_draw_and_sheathe() {
+        let config = WeaponHandlingConfig {
+            sample_rate: 48_000,
+            ..WeaponHandlingConfig::default()
+        };
+        let mut draw = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig { kind: WeaponHandlingKind::Draw, ..config },
+            0xD12A,
+        )
+        .unwrap();
+        let mut sheathe = WeaponHandlingGenerator::new(
+            WeaponHandlingConfig { kind: WeaponHandlingKind::Sheathe, ..config },
+            0xD12A,
+        )
+        .unwrap();
+        let draw_samples = render(&mut draw, 40_000);
+        let sheathe_samples = render(&mut sheathe, 40_000);
+        bounded(&draw_samples);
+        bounded(&sheathe_samples);
+        assert_ne!(draw_samples, sheathe_samples);
+        assert!(draw.is_finished() && sheathe.is_finished());
+    }
+
+    #[test]
+    fn realistic_family_adapters_construct_and_render() {
+        let mut wind = WindGenerator::new(WindConfig { sample_rate: 48_000, ..WindConfig::default() }, 1).unwrap();
+        let mut rain = RainGenerator::new(RainConfig { sample_rate: 48_000, ..RainConfig::default() }, 2).unwrap();
+        let mut impact = ImpactGenerator::new(ImpactConfig { sample_rate: 48_000, ..ImpactConfig::default() }, 3).unwrap();
+        let mut weapon_impact = WeaponImpactGenerator::new(WeaponImpactConfig { sample_rate: 48_000, ..WeaponImpactConfig::default() }, 4).unwrap();
+        let mut breakage = BreakageGenerator::new(BreakageConfig { sample_rate: 48_000, ..BreakageConfig::default() }, 5).unwrap();
+        let mut action = CharacterActionGenerator::new(CharacterActionConfig { sample_rate: 48_000, ..CharacterActionConfig::default() }, 6).unwrap();
+        let mut equipment = EquipmentMovementGenerator::new(EquipmentMovementConfig { sample_rate: 48_000, ..EquipmentMovementConfig::default() }, 7).unwrap();
+        let mut object = ObjectInteractionGenerator::new(ObjectInteractionConfig { sample_rate: 48_000, ..ObjectInteractionConfig::default() }, 8).unwrap();
+        let mut damage = DamageEffectGenerator::new(DamageEffectConfig { sample_rate: 48_000, ..DamageEffectConfig::default() }, 9).unwrap();
+        let mut tool = ToolActionGenerator::new(ToolActionConfig { sample_rate: 48_000, ..ToolActionConfig::default() }, 10).unwrap();
+        let mut voice = CharacterVocalizationGenerator::new(CharacterVocalizationConfig { sample_rate: 48_000, ..CharacterVocalizationConfig::default() }, 11).unwrap();
+        let mut mechanism = MechanicalActionGenerator::new(MechanicalActionConfig { sample_rate: 48_000, ..MechanicalActionConfig::default() }, 12).unwrap();
+
+        let mut generators: [&mut dyn ProceduralGenerator; 12] = [
+            &mut wind, &mut rain, &mut impact, &mut weapon_impact, &mut breakage, &mut action,
+            &mut equipment, &mut object, &mut damage, &mut tool, &mut voice, &mut mechanism,
+        ];
+        for generator in &mut generators {
+            let output = render(*generator, 24_000);
+            bounded(&output);
+            assert!(output.iter().any(|sample| sample.abs() > 0.0001));
+        }
+    }
+}
