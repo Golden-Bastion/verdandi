@@ -329,7 +329,7 @@ impl EnvironmentProcessor {
                 (self.write_index + 1) & (REFLECTION_BUFFER_FRAMES - 1);
             self.frames_since_enable = self.frames_since_enable.saturating_add(1);
         }
-        self.tail_level = (self.tail_level * 0.99995).max(sent_level);
+        self.tail_level = (self.tail_level * 0.9999).max(sent_level);
         (output[0], output[1])
     }
 

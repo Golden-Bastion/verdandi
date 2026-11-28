@@ -1028,6 +1028,9 @@ mod tests {
         assert!(expected[18_240 * 2..]
             .iter()
             .any(|sample| sample.abs() > 0.00001));
+        assert!(expected
+            .chunks_exact(2)
+            .any(|frame| (frame[0] - frame[1]).abs() > 0.00001));
         bounded(&expected);
         assert!(!whole.is_finished());
         render(&mut whole, 220_000);
