@@ -15,14 +15,14 @@ For a Bevy application, the default dependency enables the plugin:
 
 ~~~toml
 [dependencies]
-verdandi = "0.6"
+verdandi = "0.9"
 ~~~
 
 For a custom host that does not use Bevy, disable default features:
 
 ~~~toml
 [dependencies]
-verdandi = { version = "0.6", default-features = false }
+verdandi = { version = "0.9", default-features = false }
 ~~~
 
 If your application already depends on Bevy, use the Bevy integration guide and keep the Bevy version aligned with Verdandi's Bevy 0.20 target.
