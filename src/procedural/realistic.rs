@@ -929,7 +929,8 @@ mod tests {
         let tail = render(&mut generator, 24_000);
         assert!(tail[36_480..].iter().any(|sample| sample.abs() > 0.00001));
         assert!(!generator.is_finished());
-        render(&mut generator, 96_000);
+        // Allow the slowest configured mode to decay below the resonator quiet threshold.
+        render(&mut generator, 240_000);
         assert!(generator.is_finished());
     }
 
