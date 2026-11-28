@@ -1026,7 +1026,9 @@ mod tests {
             .iter()
             .any(|sample| sample.abs() > 0.00001));
         assert!(expected
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .any(|frame| (frame[0] - frame[1]).abs() > 0.00001));
         bounded(&expected);
         assert!(!whole.is_finished());
