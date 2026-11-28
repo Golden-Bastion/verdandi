@@ -28,6 +28,7 @@ pub mod theory;
 pub mod plugin;
 
 pub mod prelude {
+    pub use crate::procedural::{realistic, retro};
     pub use crate::composer::{Layer, LayerAction, LoopPlan, NoteEvent};
     pub use crate::engine::{
         Engine, InstrumentConfig, MusicConfig, MusicShared, MusicStatus, MusicStinger,
