@@ -6,6 +6,48 @@
 
 use std::f32::consts::TAU;
 
+/// Material-shaped response controls for a short contact event.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AcousticProfile {
+    frequencies: [f32; 3],
+    decays: [f32; 3],
+    friction: f32,
+    body: f32,
+    contact: f32,
+    ring: f32,
+}
+
+impl AcousticProfile {
+    pub(super) fn new(
+        frequencies: [f32; 3],
+        decays: [f32; 3],
+        friction: f32,
+        body: f32,
+        contact: f32,
+        ring: f32,
+    ) -> Self {
+        Self {
+            frequencies: frequencies.map(|value| value.max(1.0)),
+            decays: decays.map(|value| value.clamp(0.005, 0.8)),
+            friction: friction.clamp(0.0, 1.0),
+            body: body.clamp(0.0, 1.5),
+            contact: contact.clamp(0.0, 1.5),
+            ring: ring.clamp(0.0, 1.5),
+        }
+    }
+
+    pub(super) fn generic() -> Self {
+        Self::new(
+            [185.0, 690.0, 1_850.0],
+            [0.075, 0.052, 0.031],
+            0.55,
+            1.0,
+            1.0,
+            1.0,
+        )
+    }
+}
+
 /// A one-pole low-pass filter with a coefficient prepared for the output sample rate.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct OnePole {

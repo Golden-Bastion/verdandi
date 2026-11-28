@@ -5,6 +5,7 @@
 //! they do not load recordings or claim to be physical simulations.
 
 use super::{derive_seed, validate_rate, Rng, TAU};
+use super::acoustics::AcousticProfile;
 pub use super::{
     BreakageConfig, BreakageMaterial, CharacterActionConfig, CharacterActionKind,
     CharacterVocalizationConfig, CharacterVocalizationKind, DamageEffectConfig, DamageEffectKind,
@@ -42,10 +43,28 @@ impl<G: ProceduralGenerator> AcousticGenerator<G> {
         stream: u64,
         amount: f32,
     ) -> Result<Self, ProceduralError> {
+        Self::with_profile(
+            inner,
+            sample_rate,
+            seed,
+            stream,
+            amount,
+            AcousticProfile::generic(),
+        )
+    }
+
+    fn with_profile(
+        inner: G,
+        sample_rate: u32,
+        seed: u64,
+        stream: u64,
+        amount: f32,
+        profile: AcousticProfile,
+    ) -> Result<Self, ProceduralError> {
         validate_rate(sample_rate)?;
         Ok(Self {
             inner,
-            texture: AcousticTexture::new(sample_rate, seed, stream, amount),
+            texture: AcousticTexture::new(sample_rate, seed, stream, amount, profile),
         })
     }
 
@@ -80,27 +99,35 @@ struct AcousticTexture {
     mid_noise: super::acoustics::OnePole,
     envelope: super::acoustics::TransientEnvelope,
     modes: [super::acoustics::ModalResonator; 3],
+    profile: AcousticProfile,
     amount: f32,
 }
 
 impl AcousticTexture {
-    fn new(sample_rate: u32, seed: u64, stream: u64, amount: f32) -> Self {
+    fn new(
+        sample_rate: u32,
+        seed: u64,
+        stream: u64,
+        amount: f32,
+        profile: AcousticProfile,
+    ) -> Self {
         let rate = sample_rate as f32;
         let mut rng = Rng::new(derive_seed(seed, 0x4143_4F55, stream));
         let tune = |rng: &mut Rng, base: f32, spread: f32| {
             base * (1.0 - spread + rng.next_f32() * spread * 2.0)
         };
-        let modes = [
-            super::acoustics::ModalResonator::new(rate, tune(&mut rng, 185.0, 0.055), 0.075),
-            super::acoustics::ModalResonator::new(rate, tune(&mut rng, 690.0, 0.075), 0.052),
-            super::acoustics::ModalResonator::new(rate, tune(&mut rng, 1_850.0, 0.09), 0.031),
-        ];
+        let modes = std::array::from_fn(|index| {
+            let spread = 0.035 + index as f32 * 0.025;
+            let frequency = tune(&mut rng, profile.frequencies[index], spread);
+            super::acoustics::ModalResonator::new(rate, frequency, profile.decays[index])
+        });
         Self {
             rng,
             low_noise: super::acoustics::OnePole::low_pass(rate, 360.0),
             mid_noise: super::acoustics::OnePole::low_pass(rate, 2_600.0),
             envelope: super::acoustics::TransientEnvelope::new(rate, 0.003, 0.055),
             modes,
+            profile,
             amount,
         }
     }
@@ -112,19 +139,26 @@ impl AcousticTexture {
         let mid = self.mid_noise.tick(noise);
         let mid_band = mid - low;
         let high_band = noise - mid;
-        let broadband =
-            (mid_band * 0.72 + high_band * 0.28) * level * self.amount * (0.10 + rise * 2.4);
-        let body = low * level * self.amount * 0.075;
 
-        // A rising contact excites three independently tuned modes. Their state continues to
-        // ring after the source transient has passed, unlike a static sine mixed into the event.
-        let excitation = rise * 0.24 * (0.72 + noise * 0.28);
+        // Friction is a sustained, material-shaped noise bed; the transient term adds a sharper
+        // contact edge without turning the whole event into broadband hiss.
+        let friction = (mid_band * 0.68 + high_band * 0.32)
+            * level
+            * self.amount
+            * (0.12 + self.profile.friction * 0.72)
+            * (0.18 + rise * 2.2);
+        let body = low * level * self.amount * 0.075 * self.profile.body;
+
+        // Each attack excites material-tuned body and partial modes. This also responds to
+        // secondary contacts already present in breakage, tool, and mechanism event profiles.
+        let excitation = rise * 0.24 * self.profile.contact * (0.72 + noise * 0.28);
         let resonance = self.modes[0].excite(excitation) * 0.080
             + self.modes[1].excite(excitation) * 0.045
             + self.modes[2].excite(excitation) * 0.025;
+        let resonance = resonance * self.profile.ring;
 
         let dry = input * (1.0 - self.amount * 0.08);
-        let sample = dry + broadband + body + resonance;
+        let sample = dry + friction + body + resonance;
         (sample - sample * sample * sample * 0.10).clamp(-1.0, 1.0)
     }
 
@@ -169,20 +203,22 @@ macro_rules! acoustic_family {
 
 acoustic_family!(WindGenerator, WindGenerator, WindConfig, 1, 0.07);
 acoustic_family!(RainGenerator, RainGenerator, RainConfig, 2, 0.08);
-acoustic_family!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3, 0.24);
-acoustic_family!(
+acoustic_family_with_profile!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3, 0.24, impact_acoustic_profile);
+acoustic_family_with_profile!(
     WeaponImpactGenerator,
     WeaponImpactGenerator,
     WeaponImpactConfig,
     4,
-    0.20
+    0.20,
+    weapon_impact_acoustic_profile
 );
-acoustic_family!(
+acoustic_family_with_profile!(
     BreakageGenerator,
     BreakageGenerator,
     BreakageConfig,
     5,
-    0.28
+    0.28,
+    breakage_acoustic_profile
 );
 acoustic_family!(
     CharacterActionGenerator,
@@ -198,12 +234,13 @@ acoustic_family!(
     7,
     0.30
 );
-acoustic_family!(
+acoustic_family_with_profile!(
     ObjectInteractionGenerator,
     ObjectInteractionGenerator,
     ObjectInteractionConfig,
     8,
-    0.22
+    0.22,
+    object_interaction_acoustic_profile
 );
 acoustic_family!(
     DamageEffectGenerator,
@@ -212,12 +249,13 @@ acoustic_family!(
     9,
     0.27
 );
-acoustic_family!(
+acoustic_family_with_profile!(
     ToolActionGenerator,
     ToolActionGenerator,
     ToolActionConfig,
     10,
-    0.26
+    0.26,
+    tool_action_acoustic_profile
 );
 acoustic_family!(
     CharacterVocalizationGenerator,
@@ -226,13 +264,129 @@ acoustic_family!(
     11,
     0.13
 );
-acoustic_family!(
+acoustic_family_with_profile!(
     MechanicalActionGenerator,
     MechanicalActionGenerator,
     MechanicalActionConfig,
     12,
-    0.22
+    0.22,
+    mechanical_action_acoustic_profile
 );
+
+
+macro_rules! acoustic_family_with_profile {
+    ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr, $profile_fn:ident) => {
+        #[doc = concat!(
+            "Realistic-style acoustic variant of the original ",
+            stringify!($inner),
+            "."
+        )]
+        pub struct $name {
+            inner: AcousticGenerator<super::$inner>,
+        }
+
+        impl $name {
+            /// Construct the realistic-style family with a material-shaped acoustic response.
+            pub fn new(config: $config, seed: u64) -> Result<Self, ProceduralError> {
+                let sample_rate = config.sample_rate;
+                let profile = $profile_fn(config);
+                let inner = super::$inner::new(config, seed)?;
+                let inner = AcousticGenerator::with_profile(
+                    inner, sample_rate, seed, $stream, $amount, profile,
+                )?;
+                Ok(Self { inner })
+            }
+        }
+
+        impl ProceduralGenerator for $name {
+            fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+                self.inner.render(output)
+            }
+
+            fn is_finished(&self) -> bool {
+                self.inner.is_finished()
+            }
+        }
+    };
+}
+
+fn impact_acoustic_profile(config: ImpactConfig) -> AcousticProfile {
+    let body = 48.0 + config.resonance * 115.0;
+    AcousticProfile::new(
+        [body, body * 2.35, body * 5.4],
+        [0.12, 0.075, 0.038],
+        0.34 + (1.0 - config.resonance) * 0.32,
+        0.65 + config.resonance * 0.55,
+        0.9,
+        0.65 + config.resonance * 0.55,
+    )
+}
+
+fn weapon_impact_acoustic_profile(config: WeaponImpactConfig) -> AcousticProfile {
+    let (base, overtone, material_decay, brightness, body) = config.material.profile();
+    let decay = 1.0 / material_decay;
+    AcousticProfile::new(
+        [body, base, base * overtone],
+        [decay * 1.35, decay, decay * 0.58],
+        brightness,
+        0.85,
+        1.0,
+        1.0,
+    )
+}
+
+fn breakage_acoustic_profile(config: BreakageConfig) -> AcousticProfile {
+    let (brightness, _, body, _, ring_decay, fragment, spread, fragment_decay) =
+        config.material.profile();
+    let decay = 1.0 / ring_decay;
+    AcousticProfile::new(
+        [body, fragment, fragment + spread],
+        [decay * 1.35, decay, 1.0 / fragment_decay],
+        brightness,
+        0.9,
+        1.05,
+        1.0,
+    )
+}
+
+fn object_interaction_acoustic_profile(config: ObjectInteractionConfig) -> AcousticProfile {
+    let (frequency, decay_rate, friction, _) = config.material.profile();
+    let decay = 1.0 / decay_rate;
+    AcousticProfile::new(
+        [frequency, frequency * 1.72, frequency * 2.65],
+        [decay * 1.35, decay, decay * 0.55],
+        friction,
+        0.85,
+        0.9,
+        0.9,
+    )
+}
+
+fn tool_action_acoustic_profile(config: ToolActionConfig) -> AcousticProfile {
+    let (frequency, _, low_noise, high_noise, damping) = config.material.profile();
+    let decay = 0.10 / damping;
+    AcousticProfile::new(
+        [frequency, frequency * 1.82, frequency * 2.75],
+        [decay * 1.35, decay, decay * 0.58],
+        high_noise,
+        0.7 + low_noise * 0.35,
+        0.95,
+        0.9,
+    )
+}
+
+fn mechanical_action_acoustic_profile(config: MechanicalActionConfig) -> AcousticProfile {
+    let (frequency, _, low_noise, high_noise, damping) = config.material.profile();
+    let decay = 0.095 / damping;
+    AcousticProfile::new(
+        [frequency, frequency * 1.85, frequency * 2.8],
+        [decay * 1.35, decay, decay * 0.58],
+        high_noise,
+        0.7 + low_noise * 0.35,
+        0.9,
+        0.9,
+    )
+}
 
 const WATER_DROPLETS: usize = 7;
 
@@ -686,6 +840,86 @@ mod tests {
 
         let mut retro = super::super::ImpactGenerator::new(config, 77).unwrap();
         assert_ne!(expected, render(&mut retro, 24_000));
+    }
+
+    #[test]
+    fn material_profiles_change_the_response_without_changing_seeded_block_continuity() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let source = || super::super::ImpactGenerator::new(config, 0xC07A).unwrap();
+        let wood = AcousticProfile::new(
+            [145.0, 430.0, 900.0],
+            [0.12, 0.09, 0.055],
+            0.22,
+            0.9,
+            0.8,
+            0.75,
+        );
+        let metal = AcousticProfile::new(
+            [260.0, 1_850.0, 3_180.0],
+            [0.22, 0.19, 0.10],
+            0.92,
+            0.7,
+            1.1,
+            1.2,
+        );
+        let make = |profile| {
+            AcousticGenerator::with_profile(
+                source(),
+                config.sample_rate,
+                0xC07A,
+                0xA11,
+                0.24,
+                profile,
+            )
+            .unwrap()
+        };
+        let mut wood_whole = make(wood);
+        let mut wood_split = make(wood);
+        let wood_samples = render(&mut wood_whole, 24_000);
+        let mut split_samples = render(&mut wood_split, 777);
+        split_samples.extend(render(&mut wood_split, 9_223));
+        split_samples.extend(render(&mut wood_split, 14_000));
+        assert_eq!(wood_samples, split_samples);
+
+        let mut metal_generator = make(metal);
+        let metal_samples = render(&mut metal_generator, 24_000);
+        bounded(&wood_samples);
+        bounded(&metal_samples);
+        assert_ne!(wood_samples, metal_samples);
+    }
+
+    #[test]
+    fn material_resonance_keeps_a_tail_after_the_source_event() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let profile = AcousticProfile::new(
+            [120.0, 510.0, 1_420.0],
+            [0.22, 0.18, 0.12],
+            0.5,
+            1.0,
+            1.0,
+            1.0,
+        );
+        let inner = super::super::ImpactGenerator::new(config, 0x7A11).unwrap();
+        let mut generator = AcousticGenerator::with_profile(
+            inner,
+            config.sample_rate,
+            0x7A11,
+            0xA12,
+            0.24,
+            profile,
+        )
+        .unwrap();
+        let tail = render(&mut generator, 24_000);
+        assert!(tail[18_240..].iter().any(|sample| sample.abs() > 0.00001));
+        assert!(!generator.is_finished());
+        render(&mut generator, 96_000);
+        assert!(generator.is_finished());
     }
 
     #[test]
