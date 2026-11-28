@@ -15,14 +15,14 @@ pub mod composer;
 pub mod engine;
 pub mod preset;
 pub mod procedural;
-
-/// Selectable procedural sound families (retro and realistic-style).
-pub use procedural::{realistic, retro};
 pub mod rng;
 pub mod sfz;
 pub mod sound;
 pub mod synth;
 pub mod theory;
+
+/// Selectable procedural sound families (retro and realistic-style).
+pub use procedural::{realistic, retro};
 
 #[cfg(feature = "bevy-plugin")]
 pub mod plugin;
