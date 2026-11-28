@@ -218,7 +218,6 @@ impl<G: ProceduralGenerator> ProceduralGenerator for EnvironmentalAcoustics<G> {
     }
 }
 
-
 struct AcousticTexture {
     rng: Rng,
     low_noise: super::acoustics::OnePole,
@@ -951,7 +950,6 @@ mod tests {
             .iter()
             .all(|sample| sample.is_finite() && sample.abs() <= 1.0));
     }
-
 
     #[test]
     fn environmental_acoustics_default_is_bit_exact_passthrough() {

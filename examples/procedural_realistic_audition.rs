@@ -449,7 +449,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         )?;
     }
 
-
     // Environmental responses use the same deterministic impact source for direct comparisons.
     let seed = next_seed(base_seed, &mut sample_index);
     let impact_config = ImpactConfig {

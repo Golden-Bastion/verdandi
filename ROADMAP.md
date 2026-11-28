@@ -216,6 +216,10 @@ Status: **In progress**
 - [x] Replace the shallow-water footstep profile with a layered splash/displacement/droplet model in the Realistic set.
 - [x] Replace the Realistic weapon draw/sheathe pitch sweep with material-colored scabbard friction and discrete fitting contacts.
 - [x] Add complete Retro and Realistic WAV audition-pack examples for direct comparison.
+- [x] Add shared deterministic acoustic synthesis primitives: multi-band filtering, transient envelopes, and damped modal resonators (PR #42).
+- [x] Add material-tuned friction, body resonance, and secondary-contact response for impacts, breakage, object interactions, tools, and mechanisms (PR #43).
+- [x] Add an opt-in environmental processor for distance attenuation, air/occlusion filtering, stereo early reflections, and damped feedback tails (PR #44).
+- [ ] Audition and tune the Realistic and environmental WAV packs; signal-level tests do not establish perceptual realism.
 
 **Current boundary:** both sound sets render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. Retro remains intentionally stylized. Realistic adds material-specific cues and acoustic texture, but it is still synthesis rather than recorded or physically accurate audio. Audition and tune the Realistic profiles before treating them as accepted production-quality assets.
 

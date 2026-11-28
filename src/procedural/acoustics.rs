@@ -383,5 +383,19 @@ mod tests {
             assert!(filter.tick(1.0).is_finite());
         }
         assert!(filter.state() <= 1.0);
+        let state = filter.state();
+        filter.set_low_pass(8_000.0, 240.0);
+        assert_eq!(filter.state(), state);
+    }
+
+    #[test]
+    fn environmental_reflection_delays_fit_the_fixed_buffer_at_maximum_sample_rate() {
+        let processor = EnvironmentProcessor::new(192_000, 0.0, 0.0, 1.0, 0.2, 1.0);
+        assert!(processor
+            .delays
+            .iter()
+            .flatten()
+            .all(|delay| *delay < REFLECTION_BUFFER_FRAMES));
+        assert!(processor.delays[1][2] > processor.delays[0][2]);
     }
 }
