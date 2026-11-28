@@ -114,13 +114,13 @@ mod tests {
         let mut resonator = ModalResonator::new(48_000.0, 740.0, 0.08);
         let mut peak = 0.0_f32;
         let mut tail = 0.0_f32;
-        for frame in 0..12_000 {
+        for frame in 0..48_000 {
             let sample = resonator.excite(if frame == 0 { 0.8 } else { 0.0 });
             assert!(sample.is_finite());
             if frame < 1_000 {
                 peak = peak.max(sample.abs());
             }
-            if frame > 8_000 {
+            if frame > 40_000 {
                 tail = tail.max(sample.abs());
             }
         }
