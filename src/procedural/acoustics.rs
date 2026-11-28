@@ -156,7 +156,6 @@ impl TransientEnvelope {
     }
 }
 
-
 const REFLECTION_BUFFER_FRAMES: usize = 8_192;
 const REFLECTION_GAINS: [f32; 3] = [0.32, 0.22, 0.14];
 const FEEDBACK_WEIGHTS: [f32; 3] = [0.50, 0.32, 0.18];
@@ -228,8 +227,7 @@ impl EnvironmentProcessor {
             self.target_reflection_gain <= 0.000001 && self.reflection_gain <= 0.000001;
         let rate = sample_rate as f32;
         self.direct_filter_enabled = distance > 0.0 || occlusion > 0.0;
-        self.target_direct_gain =
-            (1.0 / (1.0 + distance * 3.5)) * (1.0 - occlusion * 0.58);
+        self.target_direct_gain = (1.0 / (1.0 + distance * 3.5)) * (1.0 - occlusion * 0.58);
         let direct_cutoff = 18_000.0 / (1.0 + distance * 2.5 + occlusion * 12.0);
         for filter in &mut self.direct_filters {
             filter.set_low_pass(rate, direct_cutoff);
@@ -265,8 +263,7 @@ impl EnvironmentProcessor {
         for channel in 0..2 {
             for tap in 0..3 {
                 let frames = (rate * milliseconds[channel][tap] * 0.001).round() as usize;
-                self.delays[channel][tap] =
-                    frames.clamp(1, REFLECTION_BUFFER_FRAMES - 1);
+                self.delays[channel][tap] = frames.clamp(1, REFLECTION_BUFFER_FRAMES - 1);
             }
         }
     }
@@ -277,22 +274,20 @@ impl EnvironmentProcessor {
             return 0.0;
         }
         self.delay_buffers[channel]
-            [(self.write_index + REFLECTION_BUFFER_FRAMES - delay)
-                & (REFLECTION_BUFFER_FRAMES - 1)]
+            [(self.write_index + REFLECTION_BUFFER_FRAMES - delay) & (REFLECTION_BUFFER_FRAMES - 1)]
     }
 
     #[inline]
     pub(super) fn process_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
-        self.direct_gain +=
-            self.smoothing * (self.target_direct_gain - self.direct_gain);
+        self.direct_gain += self.smoothing * (self.target_direct_gain - self.direct_gain);
         self.reflection_gain +=
             self.smoothing * (self.target_reflection_gain - self.reflection_gain);
 
         let input = [left, right];
         let mut output = [0.0; 2];
         let mut sent_level = 0.0_f32;
-        let reflections_enabled = self.reflection_gain > 0.000001
-            || self.target_reflection_gain > 0.000001;
+        let reflections_enabled =
+            self.reflection_gain > 0.000001 || self.target_reflection_gain > 0.000001;
 
         for channel in 0..2 {
             let filtered = if self.direct_filter_enabled {
@@ -327,8 +322,7 @@ impl EnvironmentProcessor {
         }
 
         if reflections_enabled {
-            self.write_index =
-                (self.write_index + 1) & (REFLECTION_BUFFER_FRAMES - 1);
+            self.write_index = (self.write_index + 1) & (REFLECTION_BUFFER_FRAMES - 1);
             self.frames_since_enable = self.frames_since_enable.saturating_add(1);
         }
         self.tail_level = (self.tail_level * self.tail_release).max(sent_level);

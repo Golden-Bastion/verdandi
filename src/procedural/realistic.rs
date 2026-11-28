@@ -93,7 +93,6 @@ impl<G: ProceduralGenerator> ProceduralGenerator for AcousticGenerator<G> {
     }
 }
 
-
 /// Controls distance, obstruction, and the surrounding acoustic space for a generated sound.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EnvironmentalAcousticsConfig {
@@ -991,9 +990,7 @@ mod tests {
         .unwrap();
         let dry_samples = render(&mut dry, 18_000);
         let distant_samples = render(&mut distant, 18_000);
-        let energy = |samples: &[f32]| {
-            samples.iter().map(|sample| sample * sample).sum::<f32>()
-        };
+        let energy = |samples: &[f32]| samples.iter().map(|sample| sample * sample).sum::<f32>();
         assert!(energy(&distant_samples) < energy(&dry_samples) * 0.2);
         bounded(&distant_samples);
     }
