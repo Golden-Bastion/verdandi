@@ -123,7 +123,11 @@ impl AcousticTexture {
 
 macro_rules! acoustic_family {
     ($name:ident, $inner:ident, $config:ident, $stream:expr) => {
-        #[doc = concat!("Realistic-style acoustic variant of the original ", stringify!($inner), ".")]
+        #[doc = concat!(
+            "Realistic-style acoustic variant of the original ",
+            stringify!($inner),
+            "."
+        )]
         pub struct $name {
             inner: AcousticGenerator<super::$inner>,
         }
@@ -261,7 +265,17 @@ impl FootstepGenerator {
         } else {
             0.27
         };
-        let mut rng = Rng::new(derive_seed(seed, 0x5246_4F4F, surface as u64));
+        let surface_stream = match surface {
+            FootstepSurface::Dirt => 0,
+            FootstepSurface::Grass => 1,
+            FootstepSurface::Gravel => 2,
+            FootstepSurface::Wood => 3,
+            FootstepSurface::Stone => 4,
+            FootstepSurface::Metal => 5,
+            FootstepSurface::ShallowWater => 6,
+            FootstepSurface::Snow => 7,
+        };
+        let mut rng = Rng::new(derive_seed(seed, 0x5246_4F4F, surface_stream));
         let mode_phase_a = rng.next_f32();
         let mode_phase_b = rng.next_f32();
         let mode_frequency_a = mode_a * (0.94 + rng.next_f32() * 0.12);
@@ -537,7 +551,11 @@ impl ProceduralGenerator for WeaponHandlingGenerator {
             let friction = (high * high_gain + mid * mid_gain)
                 * friction_envelope
                 * (0.78 + self.speed * 0.36);
-            let body = self.deep_state * body_gain * (0.8 + self.weight * 0.4);
+            let body_envelope = 1.0 - smoothstep(0.78, 1.0, progress);
+            let body = self.deep_state
+                * body_gain
+                * (0.8 + self.weight * 0.4)
+                * body_envelope;
             let contacts: f32 = self
                 .contacts
                 .iter()
@@ -655,22 +673,116 @@ mod tests {
 
     #[test]
     fn realistic_family_adapters_construct_and_render() {
-        let mut wind = WindGenerator::new(WindConfig { sample_rate: 48_000, ..WindConfig::default() }, 1).unwrap();
-        let mut rain = RainGenerator::new(RainConfig { sample_rate: 48_000, ..RainConfig::default() }, 2).unwrap();
-        let mut impact = ImpactGenerator::new(ImpactConfig { sample_rate: 48_000, ..ImpactConfig::default() }, 3).unwrap();
-        let mut weapon_impact = WeaponImpactGenerator::new(WeaponImpactConfig { sample_rate: 48_000, ..WeaponImpactConfig::default() }, 4).unwrap();
-        let mut breakage = BreakageGenerator::new(BreakageConfig { sample_rate: 48_000, ..BreakageConfig::default() }, 5).unwrap();
-        let mut action = CharacterActionGenerator::new(CharacterActionConfig { sample_rate: 48_000, ..CharacterActionConfig::default() }, 6).unwrap();
-        let mut equipment = EquipmentMovementGenerator::new(EquipmentMovementConfig { sample_rate: 48_000, ..EquipmentMovementConfig::default() }, 7).unwrap();
-        let mut object = ObjectInteractionGenerator::new(ObjectInteractionConfig { sample_rate: 48_000, ..ObjectInteractionConfig::default() }, 8).unwrap();
-        let mut damage = DamageEffectGenerator::new(DamageEffectConfig { sample_rate: 48_000, ..DamageEffectConfig::default() }, 9).unwrap();
-        let mut tool = ToolActionGenerator::new(ToolActionConfig { sample_rate: 48_000, ..ToolActionConfig::default() }, 10).unwrap();
-        let mut voice = CharacterVocalizationGenerator::new(CharacterVocalizationConfig { sample_rate: 48_000, ..CharacterVocalizationConfig::default() }, 11).unwrap();
-        let mut mechanism = MechanicalActionGenerator::new(MechanicalActionConfig { sample_rate: 48_000, ..MechanicalActionConfig::default() }, 12).unwrap();
+        let mut wind = WindGenerator::new(
+            WindConfig {
+                sample_rate: 48_000,
+                ..WindConfig::default()
+            },
+            1,
+        )
+        .unwrap();
+        let mut rain = RainGenerator::new(
+            RainConfig {
+                sample_rate: 48_000,
+                ..RainConfig::default()
+            },
+            2,
+        )
+        .unwrap();
+        let mut impact = ImpactGenerator::new(
+            ImpactConfig {
+                sample_rate: 48_000,
+                ..ImpactConfig::default()
+            },
+            3,
+        )
+        .unwrap();
+        let mut weapon_impact = WeaponImpactGenerator::new(
+            WeaponImpactConfig {
+                sample_rate: 48_000,
+                ..WeaponImpactConfig::default()
+            },
+            4,
+        )
+        .unwrap();
+        let mut breakage = BreakageGenerator::new(
+            BreakageConfig {
+                sample_rate: 48_000,
+                ..BreakageConfig::default()
+            },
+            5,
+        )
+        .unwrap();
+        let mut action = CharacterActionGenerator::new(
+            CharacterActionConfig {
+                sample_rate: 48_000,
+                ..CharacterActionConfig::default()
+            },
+            6,
+        )
+        .unwrap();
+        let mut equipment = EquipmentMovementGenerator::new(
+            EquipmentMovementConfig {
+                sample_rate: 48_000,
+                ..EquipmentMovementConfig::default()
+            },
+            7,
+        )
+        .unwrap();
+        let mut object = ObjectInteractionGenerator::new(
+            ObjectInteractionConfig {
+                sample_rate: 48_000,
+                ..ObjectInteractionConfig::default()
+            },
+            8,
+        )
+        .unwrap();
+        let mut damage = DamageEffectGenerator::new(
+            DamageEffectConfig {
+                sample_rate: 48_000,
+                ..DamageEffectConfig::default()
+            },
+            9,
+        )
+        .unwrap();
+        let mut tool = ToolActionGenerator::new(
+            ToolActionConfig {
+                sample_rate: 48_000,
+                ..ToolActionConfig::default()
+            },
+            10,
+        )
+        .unwrap();
+        let mut voice = CharacterVocalizationGenerator::new(
+            CharacterVocalizationConfig {
+                sample_rate: 48_000,
+                ..CharacterVocalizationConfig::default()
+            },
+            11,
+        )
+        .unwrap();
+        let mut mechanism = MechanicalActionGenerator::new(
+            MechanicalActionConfig {
+                sample_rate: 48_000,
+                ..MechanicalActionConfig::default()
+            },
+            12,
+        )
+        .unwrap();
 
         let mut generators: [&mut dyn ProceduralGenerator; 12] = [
-            &mut wind, &mut rain, &mut impact, &mut weapon_impact, &mut breakage, &mut action,
-            &mut equipment, &mut object, &mut damage, &mut tool, &mut voice, &mut mechanism,
+            &mut wind,
+            &mut rain,
+            &mut impact,
+            &mut weapon_impact,
+            &mut breakage,
+            &mut action,
+            &mut equipment,
+            &mut object,
+            &mut damage,
+            &mut tool,
+            &mut voice,
+            &mut mechanism,
         ];
         for generator in &mut generators {
             let output = render(*generator, 24_000);
