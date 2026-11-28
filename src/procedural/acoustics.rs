@@ -165,9 +165,11 @@ const FEEDBACK_WEIGHTS: [f32; 3] = [0.50, 0.32, 0.18];
 pub(super) struct EnvironmentProcessor {
     direct_filters: [OnePole; 2],
     feedback_filters: [OnePole; 2],
+    reflection_filters: [OnePole; 2],
     delay_buffers: [[f32; REFLECTION_BUFFER_FRAMES]; 2],
     delays: [[usize; 3]; 2],
     write_index: usize,
+    frames_since_enable: usize,
     direct_filter_enabled: bool,
     direct_gain: f32,
     target_direct_gain: f32,
@@ -191,9 +193,11 @@ impl EnvironmentProcessor {
         let mut processor = Self {
             direct_filters: [OnePole::low_pass(rate, 18_000.0); 2],
             feedback_filters: [OnePole::low_pass(rate, 8_000.0); 2],
+            reflection_filters: [OnePole::low_pass(rate, 8_000.0); 2],
             delay_buffers: [[0.0; REFLECTION_BUFFER_FRAMES]; 2],
             delays: [[1; 3]; 2],
             write_index: 0,
+            frames_since_enable: 0,
             direct_filter_enabled: false,
             direct_gain: 1.0,
             target_direct_gain: 1.0,
@@ -231,13 +235,16 @@ impl EnvironmentProcessor {
 
         self.target_reflection_gain = wet * room_size * (1.0 - absorption * 0.5);
         if was_reflections_disabled && self.target_reflection_gain > 0.000001 {
-            self.delay_buffers = [[0.0; REFLECTION_BUFFER_FRAMES]; 2];
             self.write_index = 0;
+            self.frames_since_enable = 0;
             self.tail_level = 0.0;
         }
         self.feedback_gain = 0.54 - absorption * 0.34;
         let feedback_cutoff = 14_000.0 - absorption * 11_500.0;
         for filter in &mut self.feedback_filters {
+            filter.set_low_pass(rate, feedback_cutoff);
+        }
+        for filter in &mut self.reflection_filters {
             filter.set_low_pass(rate, feedback_cutoff);
         }
 
@@ -264,6 +271,9 @@ impl EnvironmentProcessor {
 
     #[inline]
     fn read_delay(&self, channel: usize, delay: usize) -> f32 {
+        if self.frames_since_enable < delay {
+            return 0.0;
+        }
         self.delay_buffers[channel]
             [(self.write_index + REFLECTION_BUFFER_FRAMES - delay)
                 & (REFLECTION_BUFFER_FRAMES - 1)]
@@ -302,10 +312,11 @@ impl EnvironmentProcessor {
                 self.delay_buffers[channel][self.write_index] =
                     (direct + feedback).clamp(-2.0, 2.0);
 
-                let reflected = (first * REFLECTION_GAINS[0]
-                    + second * REFLECTION_GAINS[1]
-                    + third * REFLECTION_GAINS[2])
-                    * self.reflection_gain;
+                let reflected = self.reflection_filters[channel].tick(
+                    first * REFLECTION_GAINS[0]
+                        + second * REFLECTION_GAINS[1]
+                        + third * REFLECTION_GAINS[2],
+                ) * self.reflection_gain;
                 output[channel] = (direct + reflected).clamp(-1.0, 1.0);
                 sent_level = sent_level.max(direct.abs());
             } else {
@@ -316,6 +327,7 @@ impl EnvironmentProcessor {
         if reflections_enabled {
             self.write_index =
                 (self.write_index + 1) & (REFLECTION_BUFFER_FRAMES - 1);
+            self.frames_since_enable = self.frames_since_enable.saturating_add(1);
         }
         self.tail_level = (self.tail_level * 0.99995).max(sent_level);
         (output[0], output[1])
