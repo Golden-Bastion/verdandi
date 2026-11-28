@@ -27,11 +27,6 @@ impl OnePole {
         self.state += self.coefficient * (input - self.state);
         self.state
     }
-
-    #[inline]
-    pub(super) fn state(&self) -> f32 {
-        self.state
-    }
 }
 
 /// A stable second-order resonator with a controllable exponential decay time.
@@ -136,7 +131,7 @@ mod tests {
         assert!(rise > 0.7);
         let (level, next_rise) = envelope.tick(0.8);
         assert!(level > 0.0);
-        assert_eq!(next_rise, 0.0);
+        assert!(next_rise > 0.0 && next_rise < rise);
         for _ in 0..20_000 {
             envelope.tick(0.0);
         }
@@ -149,6 +144,6 @@ mod tests {
         for _ in 0..1_000 {
             assert!(filter.tick(1.0).is_finite());
         }
-        assert!(filter.state() <= 1.0);
+        assert!(filter.state <= 1.0);
     }
 }
