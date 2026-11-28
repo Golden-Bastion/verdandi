@@ -201,9 +201,52 @@ macro_rules! acoustic_family {
     };
 }
 
+macro_rules! acoustic_family_with_profile {
+    ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr, $profile_fn:ident) => {
+        #[doc = concat!(
+            "Realistic-style acoustic variant of the original ",
+            stringify!($inner),
+            "."
+        )]
+        pub struct $name {
+            inner: AcousticGenerator<super::$inner>,
+        }
+
+        impl $name {
+            /// Construct the realistic-style family with a material-shaped acoustic response.
+            pub fn new(config: $config, seed: u64) -> Result<Self, ProceduralError> {
+                let sample_rate = config.sample_rate;
+                let profile = $profile_fn(config);
+                let inner = super::$inner::new(config, seed)?;
+                let inner = AcousticGenerator::with_profile(
+                    inner, sample_rate, seed, $stream, $amount, profile,
+                )?;
+                Ok(Self { inner })
+            }
+        }
+
+        impl ProceduralGenerator for $name {
+            fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+                self.inner.render(output)
+            }
+
+            fn is_finished(&self) -> bool {
+                self.inner.is_finished()
+            }
+        }
+    };
+}
+
 acoustic_family!(WindGenerator, WindGenerator, WindConfig, 1, 0.07);
 acoustic_family!(RainGenerator, RainGenerator, RainConfig, 2, 0.08);
-acoustic_family_with_profile!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3, 0.24, impact_acoustic_profile);
+acoustic_family_with_profile!(
+    ImpactGenerator,
+    ImpactGenerator,
+    ImpactConfig,
+    3,
+    0.24,
+    impact_acoustic_profile
+);
 acoustic_family_with_profile!(
     WeaponImpactGenerator,
     WeaponImpactGenerator,
@@ -273,42 +316,6 @@ acoustic_family_with_profile!(
     mechanical_action_acoustic_profile
 );
 
-
-macro_rules! acoustic_family_with_profile {
-    ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr, $profile_fn:ident) => {
-        #[doc = concat!(
-            "Realistic-style acoustic variant of the original ",
-            stringify!($inner),
-            "."
-        )]
-        pub struct $name {
-            inner: AcousticGenerator<super::$inner>,
-        }
-
-        impl $name {
-            /// Construct the realistic-style family with a material-shaped acoustic response.
-            pub fn new(config: $config, seed: u64) -> Result<Self, ProceduralError> {
-                let sample_rate = config.sample_rate;
-                let profile = $profile_fn(config);
-                let inner = super::$inner::new(config, seed)?;
-                let inner = AcousticGenerator::with_profile(
-                    inner, sample_rate, seed, $stream, $amount, profile,
-                )?;
-                Ok(Self { inner })
-            }
-        }
-
-        impl ProceduralGenerator for $name {
-            fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
-                self.inner.render(output)
-            }
-
-            fn is_finished(&self) -> bool {
-                self.inner.is_finished()
-            }
-        }
-    };
-}
 
 fn impact_acoustic_profile(config: ImpactConfig) -> AcousticProfile {
     let body = 48.0 + config.resonance * 115.0;
