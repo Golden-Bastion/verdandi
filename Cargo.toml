@@ -46,6 +46,9 @@ name = "sfz_audition"
 name = "procedural_audition"
 
 [[example]]
+name = "procedural_realistic_audition"
+
+[[example]]
 name = "demo"
 required-features = ["demo"]
 
