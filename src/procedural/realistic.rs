@@ -13,6 +13,7 @@ pub use super::{
     ObjectInteractionKind, ObjectInteractionMaterial, ProceduralError, ProceduralGenerator,
     RainConfig, ToolActionConfig, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
     WeaponHandlingKind, WeaponHandlingMaterial, WeaponImpactConfig, WeaponImpactKind, WindConfig,
+    MAX_PROCEDURAL_SAMPLE_RATE, MIN_PROCEDURAL_SAMPLE_RATE,
 };
 use super::{derive_seed, validate_rate, Rng, TAU};
 
