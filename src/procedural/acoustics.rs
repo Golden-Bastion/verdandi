@@ -57,11 +57,18 @@ pub(super) struct OnePole {
 
 impl OnePole {
     pub(super) fn low_pass(sample_rate: f32, cutoff_hz: f32) -> Self {
-        let cutoff = cutoff_hz.clamp(1.0, sample_rate * 0.45);
-        Self {
+        let mut filter = Self {
             state: 0.0,
-            coefficient: 1.0 - (-TAU * cutoff / sample_rate).exp(),
-        }
+            coefficient: 0.0,
+        };
+        filter.set_low_pass(sample_rate, cutoff_hz);
+        filter
+    }
+
+    /// Change the cutoff without discarding the filter's current signal state.
+    pub(super) fn set_low_pass(&mut self, sample_rate: f32, cutoff_hz: f32) {
+        let cutoff = cutoff_hz.clamp(1.0, sample_rate * 0.45);
+        self.coefficient = 1.0 - (-TAU * cutoff / sample_rate).exp();
     }
 
     #[inline]
@@ -218,7 +225,9 @@ impl EnvironmentProcessor {
         self.target_direct_gain =
             (1.0 / (1.0 + distance * 3.5)) * (1.0 - occlusion * 0.58);
         let direct_cutoff = 18_000.0 / (1.0 + distance * 2.5 + occlusion * 12.0);
-        self.direct_filters = [OnePole::low_pass(rate, direct_cutoff); 2];
+        for filter in &mut self.direct_filters {
+            filter.set_low_pass(rate, direct_cutoff);
+        }
 
         self.target_reflection_gain = wet * room_size * (1.0 - absorption * 0.5);
         if was_reflections_disabled && self.target_reflection_gain > 0.000001 {
@@ -228,7 +237,9 @@ impl EnvironmentProcessor {
         }
         self.feedback_gain = 0.54 - absorption * 0.34;
         let feedback_cutoff = 14_000.0 - absorption * 11_500.0;
-        self.feedback_filters = [OnePole::low_pass(rate, feedback_cutoff); 2];
+        for filter in &mut self.feedback_filters {
+            filter.set_low_pass(rate, feedback_cutoff);
+        }
 
         let milliseconds = [
             [

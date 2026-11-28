@@ -172,11 +172,11 @@ impl<G: ProceduralGenerator> EnvironmentalAcoustics<G> {
         self.config
     }
 
-    /// Update the environmental response without replacing the source or its delay state.
+    /// Update the environmental response without replacing the source or its filter state.
     ///
-    /// Direct and reflection gains are smoothed over a short interval. Filter cutoffs and
-    /// reflection timing are recalculated immediately; gradual updates are preferable for
-    /// moving sources or continuous room transitions.
+    /// Direct and reflection gains are smoothed over a short interval. Filter cutoffs are
+    /// updated while retaining filter state; reflection timing changes immediately. Gradual
+    /// parameter changes are preferable for moving sources or continuous room transitions.
     pub fn set_config(
         &mut self,
         config: EnvironmentalAcousticsConfig,
