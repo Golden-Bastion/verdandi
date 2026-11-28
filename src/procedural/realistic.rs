@@ -76,51 +76,60 @@ impl<G: ProceduralGenerator> ProceduralGenerator for AcousticGenerator<G> {
 
 struct AcousticTexture {
     rng: Rng,
-    low_state: f32,
-    envelope: f32,
-    previous: f32,
-    attack: f32,
-    release: f32,
+    low_noise: super::acoustics::OnePole,
+    mid_noise: super::acoustics::OnePole,
+    envelope: super::acoustics::TransientEnvelope,
+    modes: [super::acoustics::ModalResonator; 3],
     amount: f32,
 }
 
 impl AcousticTexture {
     fn new(sample_rate: u32, seed: u64, stream: u64, amount: f32) -> Self {
         let rate = sample_rate as f32;
+        let mut rng = Rng::new(derive_seed(seed, 0x4143_4F55, stream));
+        let tune = |rng: &mut Rng, base: f32, spread: f32| {
+            base * (1.0 - spread + rng.next_f32() * spread * 2.0)
+        };
+        let modes = [
+            super::acoustics::ModalResonator::new(rate, tune(&mut rng, 185.0, 0.055), 0.075),
+            super::acoustics::ModalResonator::new(rate, tune(&mut rng, 690.0, 0.075), 0.052),
+            super::acoustics::ModalResonator::new(rate, tune(&mut rng, 1_850.0, 0.09), 0.031),
+        ];
         Self {
-            rng: Rng::new(derive_seed(seed, 0x4143_4F55, stream)),
-            low_state: 0.0,
-            envelope: 0.0,
-            previous: 0.0,
-            attack: 1.0 - (-1.0 / (rate * 0.004)).exp(),
-            release: 1.0 - (-1.0 / (rate * 0.040)).exp(),
+            rng,
+            low_noise: super::acoustics::OnePole::low_pass(rate, 360.0),
+            mid_noise: super::acoustics::OnePole::low_pass(rate, 2_600.0),
+            envelope: super::acoustics::TransientEnvelope::new(rate, 0.003, 0.055),
+            modes,
             amount,
         }
     }
 
     fn process(&mut self, input: f32) -> f32 {
-        let level = input.abs().min(1.0);
-        let transient = (input - self.previous).abs().min(1.0);
-        self.previous = input;
-        let coefficient = if level > self.envelope {
-            self.attack
-        } else {
-            self.release
-        };
-        self.envelope += coefficient * (level - self.envelope);
-
+        let (level, rise) = self.envelope.tick(input);
         let noise = self.rng.next_f32() * 2.0 - 1.0;
-        self.low_state += 0.018 * (noise - self.low_state);
-        let high_texture = noise - self.low_state;
-        let texture = high_texture * self.envelope * self.amount * (0.34 + transient * 0.90);
-        let low_texture = self.low_state * self.envelope * self.amount * 0.20;
-        let dry = input * (1.0 - self.amount * 0.12);
-        let sample = dry + texture + low_texture;
-        (sample - sample * sample * sample * 0.12).clamp(-1.0, 1.0)
+        let low = self.low_noise.tick(noise);
+        let mid = self.mid_noise.tick(noise);
+        let mid_band = mid - low;
+        let high_band = noise - mid;
+        let broadband =
+            (mid_band * 0.72 + high_band * 0.28) * level * self.amount * (0.10 + rise * 2.4);
+        let body = low * level * self.amount * 0.075;
+
+        // A rising contact excites three independently tuned modes. Their state continues to
+        // ring after the source transient has passed, unlike a static sine mixed into the event.
+        let excitation = rise * 0.24 * (0.72 + noise * 0.28);
+        let resonance = self.modes[0].excite(excitation) * 0.080
+            + self.modes[1].excite(excitation) * 0.045
+            + self.modes[2].excite(excitation) * 0.025;
+
+        let dry = input * (1.0 - self.amount * 0.08);
+        let sample = dry + broadband + body + resonance;
+        (sample - sample * sample * sample * 0.10).clamp(-1.0, 1.0)
     }
 
     fn is_quiet(&self) -> bool {
-        self.envelope < 0.001
+        self.envelope.is_quiet() && self.modes.iter().all(|mode| mode.is_quiet())
     }
 }
 

@@ -4,6 +4,12 @@ Verdandi provides two deterministic, engine-independent procedural sound sets fo
 
 Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
 
+## Layered acoustic synthesis
+
+The Realistic family uses shared synthesis primitives rather than adding unrelated oscillators to each generator. Its texture stage separates low-, mid-, and high-frequency noise, tracks transient energy, and excites a small bank of damped resonant modes. The modes continue ringing after the original transient, with deterministic per-event tuning variation. These components are internal building blocks and do not change the Retro family or its seeded output.
+
+The synthesis remains deliberately bounded: filters and resonators keep fixed state, are prepared when the generator is constructed, and require no allocation or dynamic dispatch while rendering. This is a more expressive acoustic approximation, not a complete physical model. Material-specific event interactions and environmental reflections are developed as separate layers so they can be enabled and evaluated independently.
+
 ## Choosing the Retro or Realistic sound set
 
 The original generators remain available unchanged through `verdandi::procedural::retro`. Existing top-level names such as `FootstepGenerator` and `WeaponHandlingGenerator` remain available and retain their original constructors and output; they are the original Retro implementations.

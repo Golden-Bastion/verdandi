@@ -136,3 +136,16 @@ The project owner is the final authority on product direction and public API dec
 - Do not claim a feature is complete when only part of its intended behaviour exists.
 
 When a task is complete, report what changed, important decisions, relevant commits and PR, documentation updates, and remaining work. Distinguish completed implementation from future work.
+
+
+## Acoustic realism milestone
+
+The Realistic procedural set is being advanced from lightweight texture overlays toward a reusable layered acoustic synthesis system. Keep Retro algorithms and seeded output unchanged.
+
+Planned delivery is grouped into cohesive pull requests:
+
+1. **Shared acoustic synthesis core:** reusable filters, transient envelopes, and damped modal resonators; integrate them into the Realistic family texture layer with deterministic variation, bounded state, and regression coverage.
+2. **Material and interaction synthesis:** richer contact excitation, friction, body resonance, secondary contacts, and decay for representative event families. Prefer shared primitives and coherent event models over per-generator one-off noise additions.
+3. **Environmental acoustics:** reusable distance/occlusion and early-reflection/decay processing suitable for open and enclosed spaces, with explicit configuration and bounded processing cost.
+
+Every stage must preserve Retro output, keep rendering allocation-free, maintain block-size determinism, include automated signal-level tests, and provide updated WAV audition packs/documentation. Tests establish invariants, not perceptual quality; do not claim realism acceptance without listening review. Recorded audio may later be supported through the existing host-provided asset path where procedural synthesis reaches its limits.

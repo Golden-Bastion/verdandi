@@ -10,7 +10,7 @@ Music is generated at runtime by default; no recorded music library is required.
 - Layered four-bar composition, seeded theme selection, automatic or manual intensity, and per-layer controls.
 - Runtime seed and preset changes, crossfades, transport pause/resume, gain controls, and synthesized stingers.
 - Optional SFZ parsing and sample playback, with procedural fallback for unmatched notes.
-- Two selectable deterministic procedural sound sets: the original retro/stylized families and realistic-style variants with material-shaped footsteps, water splashes, scabbard friction, fitting contacts, and added acoustic texture across the remaining families.
+- Two selectable deterministic procedural sound sets: the original retro/stylized families and realistic-style variants with material-shaped footsteps, water splashes, scabbard friction, fitting contacts, transient-driven multi-band texture, and damped resonant modes across the remaining families.
 - One-shot effects, persistent keyed loops, fades, independent music/effects/ambience buses, and voice limits.
 - Bounded decoded-PCM streaming for long effects and environmental audio.
 - An engine-independent core with an optional Bevy 0.20 integration.

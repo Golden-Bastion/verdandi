@@ -7,6 +7,7 @@ use crate::rng::{derive_seed, Rng};
 use std::f32::consts::TAU;
 
 /// Acoustically enhanced procedural sound family set.
+mod acoustics;
 pub mod realistic;
 /// Original stylized procedural sound family set.
 pub mod retro;
