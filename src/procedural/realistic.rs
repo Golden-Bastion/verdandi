@@ -46,7 +46,7 @@ impl<G: ProceduralGenerator> AcousticGenerator<G> {
         validate_rate(sample_rate)?;
         Ok(Self {
             inner,
-            texture: AcousticTexture::new(sample_rate, seed, stream),
+            texture: AcousticTexture::new(sample_rate, seed, stream, amount),
         })
     }
 
@@ -86,7 +86,7 @@ struct AcousticTexture {
 }
 
 impl AcousticTexture {
-    fn new(sample_rate: u32, seed: u64, stream: u64) -> Self {
+    fn new(sample_rate: u32, seed: u64, stream: u64, amount: f32) -> Self {
         let rate = sample_rate as f32;
         Self {
             rng: Rng::new(derive_seed(seed, 0x4143_4F55, stream)),
@@ -95,6 +95,7 @@ impl AcousticTexture {
             previous: 0.0,
             attack: 1.0 - (-1.0 / (rate * 0.004)).exp(),
             release: 1.0 - (-1.0 / (rate * 0.075)).exp(),
+            amount,
         }
     }
 
@@ -169,20 +170,51 @@ macro_rules! acoustic_family {
 acoustic_family!(WindGenerator, WindGenerator, WindConfig, 1, 0.07);
 acoustic_family!(RainGenerator, RainGenerator, RainConfig, 2, 0.08);
 acoustic_family!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3, 0.24);
-acoustic_family!(WeaponImpactGenerator, WeaponImpactGenerator, WeaponImpactConfig, 4, 0.20);
+acoustic_family!(
+    WeaponImpactGenerator,
+    WeaponImpactGenerator,
+    WeaponImpactConfig,
+    4,
+    0.20
+);
 acoustic_family!(BreakageGenerator, BreakageGenerator, BreakageConfig, 5, 0.28);
-acoustic_family!(CharacterActionGenerator, CharacterActionGenerator, CharacterActionConfig, 6, 0.20);
-acoustic_family!(EquipmentMovementGenerator, EquipmentMovementGenerator, EquipmentMovementConfig, 7, 0.30);
-acoustic_family!(ObjectInteractionGenerator, ObjectInteractionGenerator, ObjectInteractionConfig, 8, 0.22);
+acoustic_family!(
+    CharacterActionGenerator,
+    CharacterActionGenerator,
+    CharacterActionConfig,
+    6,
+    0.20
+);
+acoustic_family!(
+    EquipmentMovementGenerator,
+    EquipmentMovementGenerator,
+    EquipmentMovementConfig,
+    7,
+    0.30
+);
+acoustic_family!(
+    ObjectInteractionGenerator,
+    ObjectInteractionGenerator,
+    ObjectInteractionConfig,
+    8,
+    0.22
+);
 acoustic_family!(DamageEffectGenerator, DamageEffectGenerator, DamageEffectConfig, 9, 0.27);
 acoustic_family!(ToolActionGenerator, ToolActionGenerator, ToolActionConfig, 10, 0.26);
 acoustic_family!(
     CharacterVocalizationGenerator,
     CharacterVocalizationGenerator,
     CharacterVocalizationConfig,
-    11
+    11,
+    0.13
 );
-acoustic_family!(MechanicalActionGenerator, MechanicalActionGenerator, MechanicalActionConfig, 12, 0.22);
+acoustic_family!(
+    MechanicalActionGenerator,
+    MechanicalActionGenerator,
+    MechanicalActionConfig,
+    12,
+    0.22
+);
 
 const WATER_DROPLETS: usize = 7;
 
