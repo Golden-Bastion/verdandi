@@ -37,7 +37,7 @@ fn main() {
         eprintln!("{error}");
         eprintln!(
             "Usage: procedural_audition [output-directory] [seed]\n\
-             Defaults: target/audition-pack and seed 0x5eed"
+             Defaults: target/retro-audition-pack and seed 0x5eed"
         );
         std::process::exit(2);
     }
