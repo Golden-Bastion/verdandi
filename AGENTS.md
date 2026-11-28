@@ -136,7 +136,9 @@ The project owner is the final authority on product direction and public API dec
 - Do not claim a feature is complete when only part of its intended behaviour exists.
 
 When a task is complete, report what changed, important decisions, relevant commits and PR, documentation updates, and remaining work. Distinguish completed implementation from future work.
-\n\n## Acoustic realism milestone
+
+
+## Acoustic realism milestone
 
 The Realistic procedural set is being advanced from lightweight texture overlays toward a reusable layered acoustic synthesis system. Keep Retro algorithms and seeded output unchanged.
 
