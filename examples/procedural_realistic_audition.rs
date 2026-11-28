@@ -18,7 +18,8 @@ use verdandi::procedural::realistic::{
     EquipmentMovementKind, FootstepConfig, FootstepGenerator, FootstepSurface, ImpactConfig,
     ImpactGenerator, ImpactMaterial, MechanicalActionConfig, MechanicalActionGenerator,
     MechanicalActionKind, MechanicalActionMaterial, ObjectInteractionConfig, ObjectInteractionGenerator,
-    ObjectInteractionKind, ObjectInteractionMaterial, ProceduralGenerator, RainConfig, RainGenerator, ToolActionConfig,
+    ObjectInteractionKind, ObjectInteractionMaterial, ProceduralGenerator, RainConfig, RainGenerator,
+    ToolActionConfig,
     ToolActionGenerator, ToolActionKind, ToolActionMaterial, WeaponHandlingConfig,
     WeaponHandlingGenerator, WeaponHandlingKind, WeaponImpactConfig, WeaponImpactGenerator,
     WeaponImpactKind, WindConfig, WindGenerator,
@@ -319,12 +320,36 @@ fn run() -> Result<(), Box<dyn Error>> {
         ..ObjectInteractionConfig::default()
     };
     for (kind, material, name) in [
-        (ObjectInteractionKind::Pickup, ObjectInteractionMaterial::Wood, "pickup-wood"),
-        (ObjectInteractionKind::Place, ObjectInteractionMaterial::Stone, "place-stone"),
-        (ObjectInteractionKind::Drop, ObjectInteractionMaterial::Glass, "drop-glass"),
-        (ObjectInteractionKind::Open, ObjectInteractionMaterial::Wood, "open-wood"),
-        (ObjectInteractionKind::Close, ObjectInteractionMaterial::Metal, "close-metal"),
-        (ObjectInteractionKind::Toggle, ObjectInteractionMaterial::Metal, "toggle-metal"),
+        (
+            ObjectInteractionKind::Pickup,
+            ObjectInteractionMaterial::Wood,
+            "pickup-wood",
+        ),
+        (
+            ObjectInteractionKind::Place,
+            ObjectInteractionMaterial::Stone,
+            "place-stone",
+        ),
+        (
+            ObjectInteractionKind::Drop,
+            ObjectInteractionMaterial::Glass,
+            "drop-glass",
+        ),
+        (
+            ObjectInteractionKind::Open,
+            ObjectInteractionMaterial::Wood,
+            "open-wood",
+        ),
+        (
+            ObjectInteractionKind::Close,
+            ObjectInteractionMaterial::Metal,
+            "close-metal",
+        ),
+        (
+            ObjectInteractionKind::Toggle,
+            ObjectInteractionMaterial::Metal,
+            "toggle-metal",
+        ),
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
         let mut sample_config = config;
@@ -377,12 +402,36 @@ fn run() -> Result<(), Box<dyn Error>> {
         ..MechanicalActionConfig::default()
     };
     for (kind, material, name) in [
-        (MechanicalActionKind::HingeOpen, MechanicalActionMaterial::Wood, "hinge-open-wood"),
-        (MechanicalActionKind::HingeClose, MechanicalActionMaterial::Wood, "hinge-close-wood"),
-        (MechanicalActionKind::LatchEngage, MechanicalActionMaterial::Metal, "latch-engage-metal"),
-        (MechanicalActionKind::LatchRelease, MechanicalActionMaterial::Metal, "latch-release-metal"),
-        (MechanicalActionKind::LockTurn, MechanicalActionMaterial::Metal, "lock-turn-metal"),
-        (MechanicalActionKind::Crank, MechanicalActionMaterial::Stone, "crank-stone"),
+        (
+            MechanicalActionKind::HingeOpen,
+            MechanicalActionMaterial::Wood,
+            "hinge-open-wood",
+        ),
+        (
+            MechanicalActionKind::HingeClose,
+            MechanicalActionMaterial::Wood,
+            "hinge-close-wood",
+        ),
+        (
+            MechanicalActionKind::LatchEngage,
+            MechanicalActionMaterial::Metal,
+            "latch-engage-metal",
+        ),
+        (
+            MechanicalActionKind::LatchRelease,
+            MechanicalActionMaterial::Metal,
+            "latch-release-metal",
+        ),
+        (
+            MechanicalActionKind::LockTurn,
+            MechanicalActionMaterial::Metal,
+            "lock-turn-metal",
+        ),
+        (
+            MechanicalActionKind::Crank,
+            MechanicalActionMaterial::Stone,
+            "crank-stone",
+        ),
     ] {
         let seed = next_seed(base_seed, &mut sample_index);
         let mut sample_config = config;

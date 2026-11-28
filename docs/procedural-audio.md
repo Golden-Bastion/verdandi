@@ -16,7 +16,7 @@ The original generators remain available unchanged through `verdandi::procedural
 
 Use `verdandi::procedural::realistic` for the matching Realistic family names. The realistic footstep generator builds a damped contact body and material-shaped friction; shallow water adds a broadband splash, water displacement, and independently timed droplets. The realistic weapon-handling generator uses action-specific scabbard friction and short fitting contacts. Other realistic families wrap the original event shape in deterministic broadband acoustic texture and a short decay tail.
 
-The Realistic set is still synthesized audio, not recordings or a complete physical simulation. The two audition packs are intended to make the difference easy to compare:
+The Realistic set is still synthesized audio, not recordings or a complete physical simulation. The Realistic audition pack now includes material comparisons for weapon contacts, breakage, object interactions, tools, and mechanisms. The two audition packs are intended to make the difference easy to compare:
 
 ```sh
 cargo run --release --no-default-features --example procedural_audition

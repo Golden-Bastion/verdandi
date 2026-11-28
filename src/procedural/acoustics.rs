@@ -9,12 +9,12 @@ use std::f32::consts::TAU;
 /// Material-shaped response controls for a short contact event.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct AcousticProfile {
-    frequencies: [f32; 3],
-    decays: [f32; 3],
-    friction: f32,
-    body: f32,
-    contact: f32,
-    ring: f32,
+    pub(super) frequencies: [f32; 3],
+    pub(super) decays: [f32; 3],
+    pub(super) friction: f32,
+    pub(super) body: f32,
+    pub(super) contact: f32,
+    pub(super) ring: f32,
 }
 
 impl AcousticProfile {
