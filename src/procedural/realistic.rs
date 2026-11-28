@@ -204,10 +204,10 @@ macro_rules! acoustic_family {
 macro_rules! acoustic_family_with_profile {
     ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr, $profile_fn:ident) => {
         #[doc = concat!(
-                                    "Realistic-style acoustic variant of the original ",
-                                    stringify!($inner),
-                                    "."
-                                )]
+                                            "Realistic-style acoustic variant of the original ",
+                                            stringify!($inner),
+                                            "."
+                                        )]
         pub struct $name {
             inner: AcousticGenerator<super::$inner>,
         }
