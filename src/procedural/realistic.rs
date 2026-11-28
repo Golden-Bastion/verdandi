@@ -33,7 +33,7 @@ impl<G: ProceduralGenerator> AcousticGenerator<G> {
     /// The seed controls only the additional texture; it does not alter the wrapped generator's
     /// random stream or output.
     pub fn new(inner: G, sample_rate: u32, seed: u64) -> Result<Self, ProceduralError> {
-        Self::with_stream(inner, sample_rate, seed, 0)
+        Self::with_stream(inner, sample_rate, seed, 0, 0.20)
     }
 
     fn with_stream(
@@ -41,6 +41,7 @@ impl<G: ProceduralGenerator> AcousticGenerator<G> {
         sample_rate: u32,
         seed: u64,
         stream: u64,
+        amount: f32,
     ) -> Result<Self, ProceduralError> {
         validate_rate(sample_rate)?;
         Ok(Self {
@@ -81,6 +82,7 @@ struct AcousticTexture {
     previous: f32,
     attack: f32,
     release: f32,
+    amount: f32,
 }
 
 impl AcousticTexture {
@@ -110,10 +112,14 @@ impl AcousticTexture {
         let noise = self.rng.next_f32() * 2.0 - 1.0;
         self.low_state += 0.018 * (noise - self.low_state);
         let high_texture = noise - self.low_state;
-        let texture = high_texture * self.envelope * (0.014 + transient * 0.055);
-        let low_texture = self.low_state * self.envelope * 0.018;
-        let sample = input * 0.985 + texture + low_texture;
-        (sample - sample * sample * sample * 0.08).clamp(-1.0, 1.0)
+        let texture = high_texture
+            * self.envelope
+            * self.amount
+            * (0.34 + transient * 0.90);
+        let low_texture = self.low_state * self.envelope * self.amount * 0.20;
+        let dry = input * (1.0 - self.amount * 0.12);
+        let sample = dry + texture + low_texture;
+        (sample - sample * sample * sample * 0.12).clamp(-1.0, 1.0)
     }
 
     fn is_quiet(&self) -> bool {
@@ -122,7 +128,7 @@ impl AcousticTexture {
 }
 
 macro_rules! acoustic_family {
-    ($name:ident, $inner:ident, $config:ident, $stream:expr) => {
+    ($name:ident, $inner:ident, $config:ident, $stream:expr, $amount:expr) => {
         #[doc = concat!(
             "Realistic-style acoustic variant of the original ",
             stringify!($inner),
@@ -137,7 +143,13 @@ macro_rules! acoustic_family {
             pub fn new(config: $config, seed: u64) -> Result<Self, ProceduralError> {
                 let sample_rate = config.sample_rate;
                 let inner = super::$inner::new(config, seed)?;
-                let inner = AcousticGenerator::with_stream(inner, sample_rate, seed, $stream)?;
+                let inner = AcousticGenerator::with_stream(
+                    inner,
+                    sample_rate,
+                    seed,
+                    $stream,
+                    $amount,
+                )?;
                 Ok(Self { inner })
             }
         }
@@ -154,23 +166,23 @@ macro_rules! acoustic_family {
     };
 }
 
-acoustic_family!(WindGenerator, WindGenerator, WindConfig, 1);
-acoustic_family!(RainGenerator, RainGenerator, RainConfig, 2);
-acoustic_family!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3);
-acoustic_family!(WeaponImpactGenerator, WeaponImpactGenerator, WeaponImpactConfig, 4);
-acoustic_family!(BreakageGenerator, BreakageGenerator, BreakageConfig, 5);
-acoustic_family!(CharacterActionGenerator, CharacterActionGenerator, CharacterActionConfig, 6);
-acoustic_family!(EquipmentMovementGenerator, EquipmentMovementGenerator, EquipmentMovementConfig, 7);
-acoustic_family!(ObjectInteractionGenerator, ObjectInteractionGenerator, ObjectInteractionConfig, 8);
-acoustic_family!(DamageEffectGenerator, DamageEffectGenerator, DamageEffectConfig, 9);
-acoustic_family!(ToolActionGenerator, ToolActionGenerator, ToolActionConfig, 10);
+acoustic_family!(WindGenerator, WindGenerator, WindConfig, 1, 0.07);
+acoustic_family!(RainGenerator, RainGenerator, RainConfig, 2, 0.08);
+acoustic_family!(ImpactGenerator, ImpactGenerator, ImpactConfig, 3, 0.24);
+acoustic_family!(WeaponImpactGenerator, WeaponImpactGenerator, WeaponImpactConfig, 4, 0.20);
+acoustic_family!(BreakageGenerator, BreakageGenerator, BreakageConfig, 5, 0.28);
+acoustic_family!(CharacterActionGenerator, CharacterActionGenerator, CharacterActionConfig, 6, 0.20);
+acoustic_family!(EquipmentMovementGenerator, EquipmentMovementGenerator, EquipmentMovementConfig, 7, 0.30);
+acoustic_family!(ObjectInteractionGenerator, ObjectInteractionGenerator, ObjectInteractionConfig, 8, 0.22);
+acoustic_family!(DamageEffectGenerator, DamageEffectGenerator, DamageEffectConfig, 9, 0.27);
+acoustic_family!(ToolActionGenerator, ToolActionGenerator, ToolActionConfig, 10, 0.26);
 acoustic_family!(
     CharacterVocalizationGenerator,
     CharacterVocalizationGenerator,
     CharacterVocalizationConfig,
     11
 );
-acoustic_family!(MechanicalActionGenerator, MechanicalActionGenerator, MechanicalActionConfig, 12);
+acoustic_family!(MechanicalActionGenerator, MechanicalActionGenerator, MechanicalActionConfig, 12, 0.22);
 
 const WATER_DROPLETS: usize = 7;
 
