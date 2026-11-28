@@ -110,8 +110,12 @@ impl AcousticTexture {
         let noise = self.rng.next_f32() * 2.0 - 1.0;
         let low = self.low_noise.tick(noise);
         let mid = self.mid_noise.tick(noise);
-        let high = mid - low;
-        let broadband = high * level * self.amount * (0.10 + rise * 2.4);
+        let mid_band = mid - low;
+        let high_band = noise - mid;
+        let broadband = (mid_band * 0.72 + high_band * 0.28)
+            * level
+            * self.amount
+            * (0.10 + rise * 2.4);
         let body = low * level * self.amount * 0.075;
 
         // A rising contact excites three independently tuned modes. Their state continues to
