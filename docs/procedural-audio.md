@@ -8,7 +8,53 @@ Generators render interleaved stereo floating-point PCM into caller-owned buffer
 
 The Realistic family uses shared synthesis primitives rather than adding unrelated oscillators to each generator. Its texture stage separates low-, mid-, and high-frequency noise, tracks transient energy, and excites a small bank of damped resonant modes. Material-aware families tune those modes and their decay from the selected material profile: impacts, weapon contacts, breakage, object interactions, tool actions, and mechanical actions receive distinct body and partial frequencies, friction levels, and ringing behaviour. Secondary contacts prepared by those event generators can excite the same material response, so fragments, repeated tool contacts, and latch/hinge contacts do not all share one generic overlay. These components are internal building blocks and do not change the Retro family or its seeded output.
 
-The synthesis remains deliberately bounded: filters and resonators keep fixed state, are prepared when the generator is constructed, and require no allocation or dynamic dispatch while rendering. This is a bounded acoustic approximation, not a complete physical model: it does not model collision geometry or solve physical material properties. Environmental distance, occlusion, and reflections remain a separate future layer.
+The synthesis remains deliberately bounded: filters and resonators keep fixed state, are prepared when the generator is constructed, and require no allocation or dynamic dispatch while rendering. This is a bounded acoustic approximation, not a complete physical model: it does not model collision geometry or solve physical material properties. The separate `EnvironmentalAcoustics` processor adds distance attenuation and high-frequency loss, obstruction filtering, and configurable early reflections with a damped feedback tail.
+
+
+## Applying environmental acoustics
+
+Wrap any procedural generator in `EnvironmentalAcoustics` when the host knows the source's distance, obstruction, and surrounding space. The processor is independent of game entities and can be used with either sound family or a custom `ProceduralGenerator`.
+
+```rust
+use verdandi::prelude::{
+    EnvironmentalAcoustics, EnvironmentalAcousticsConfig, ImpactConfig, ImpactGenerator,
+    ProceduralGenerator,
+};
+
+let source = ImpactGenerator::new(
+    ImpactConfig {
+        sample_rate: 48_000,
+        ..ImpactConfig::default()
+    },
+    0x5eed,
+)?;
+
+let mut sound = EnvironmentalAcoustics::new(
+    source,
+    48_000,
+    EnvironmentalAcousticsConfig {
+        distance: 0.65,
+        occlusion: 0.2,
+        room_size: 0.8,
+        absorption: 0.35,
+        wet: 0.55,
+    },
+)?;
+let mut block = vec![0.0; 512 * 2];
+sound.render(&mut block)?;
+```
+
+All controls are normalized to `0.0..=1.0`:
+
+- `distance` reduces direct level and progressively removes high-frequency energy.
+- `occlusion` adds stronger attenuation and low-pass filtering for obstructed paths.
+- `room_size` sets the spacing of three early-reflection taps; zero disables room reflections.
+- `absorption` damps high frequencies in the reflection feedback and shortens the tail.
+- `wet` controls the reflected signal level independently of the direct path.
+
+Use `set_config` to update a moving source or a changing environment without replacing the generator. Direct and reflection gains transition smoothly; filter cutoffs and reflection timings update immediately, so gradual host-side parameter changes are preferable for continuous movement. `is_finished` includes the environmental tail, allowing finite sources to finish after their reflections have decayed.
+
+The processor preserves stereo and uses a fixed delay buffer prepared with the generator. Rendering performs no allocation or I/O. It is a compact early-reflection model, not convolution reverb, geometric ray tracing, or a substitute for authored impulse responses. The Realistic audition pack includes distant, occluded, small-room, and cavern comparisons.
 
 ## Choosing the Retro or Realistic sound set
 

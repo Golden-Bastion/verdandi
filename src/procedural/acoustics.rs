@@ -149,6 +149,172 @@ impl TransientEnvelope {
     }
 }
 
+
+const REFLECTION_BUFFER_FRAMES: usize = 8_192;
+const REFLECTION_GAINS: [f32; 3] = [0.32, 0.22, 0.14];
+const FEEDBACK_WEIGHTS: [f32; 3] = [0.50, 0.32, 0.18];
+
+/// Fixed-state environmental filtering, early reflections, and a bounded feedback tail.
+pub(super) struct EnvironmentProcessor {
+    direct_filters: [OnePole; 2],
+    feedback_filters: [OnePole; 2],
+    delay_buffers: [[f32; REFLECTION_BUFFER_FRAMES]; 2],
+    delays: [[usize; 3]; 2],
+    write_index: usize,
+    direct_filter_enabled: bool,
+    direct_gain: f32,
+    target_direct_gain: f32,
+    reflection_gain: f32,
+    target_reflection_gain: f32,
+    feedback_gain: f32,
+    smoothing: f32,
+    tail_level: f32,
+}
+
+impl EnvironmentProcessor {
+    pub(super) fn new(
+        sample_rate: u32,
+        distance: f32,
+        occlusion: f32,
+        room_size: f32,
+        absorption: f32,
+        wet: f32,
+    ) -> Self {
+        let rate = sample_rate as f32;
+        let mut processor = Self {
+            direct_filters: [OnePole::low_pass(rate, 18_000.0); 2],
+            feedback_filters: [OnePole::low_pass(rate, 8_000.0); 2],
+            delay_buffers: [[0.0; REFLECTION_BUFFER_FRAMES]; 2],
+            delays: [[1; 3]; 2],
+            write_index: 0,
+            direct_filter_enabled: false,
+            direct_gain: 1.0,
+            target_direct_gain: 1.0,
+            reflection_gain: 0.0,
+            target_reflection_gain: 0.0,
+            feedback_gain: 0.0,
+            smoothing: 1.0 - (-1.0 / (rate * 0.025)).exp(),
+            tail_level: 0.0,
+        };
+        processor.configure(sample_rate, distance, occlusion, room_size, absorption, wet);
+        processor.direct_gain = processor.target_direct_gain;
+        processor.reflection_gain = processor.target_reflection_gain;
+        processor
+    }
+
+    pub(super) fn configure(
+        &mut self,
+        sample_rate: u32,
+        distance: f32,
+        occlusion: f32,
+        room_size: f32,
+        absorption: f32,
+        wet: f32,
+    ) {
+        let was_reflections_disabled =
+            self.target_reflection_gain <= 0.000001 && self.reflection_gain <= 0.000001;
+        let rate = sample_rate as f32;
+        self.direct_filter_enabled = distance > 0.0 || occlusion > 0.0;
+        self.target_direct_gain =
+            (1.0 / (1.0 + distance * 3.5)) * (1.0 - occlusion * 0.58);
+        let direct_cutoff = 18_000.0 / (1.0 + distance * 2.5 + occlusion * 12.0);
+        self.direct_filters = [OnePole::low_pass(rate, direct_cutoff); 2];
+
+        self.target_reflection_gain = wet * room_size * (1.0 - absorption * 0.5);
+        if was_reflections_disabled && self.target_reflection_gain > 0.000001 {
+            self.delay_buffers = [[0.0; REFLECTION_BUFFER_FRAMES]; 2];
+            self.write_index = 0;
+            self.tail_level = 0.0;
+        }
+        self.feedback_gain = 0.54 - absorption * 0.34;
+        let feedback_cutoff = 14_000.0 - absorption * 11_500.0;
+        self.feedback_filters = [OnePole::low_pass(rate, feedback_cutoff); 2];
+
+        let milliseconds = [
+            [
+                4.0 + room_size * 8.0,
+                9.0 + room_size * 12.0,
+                16.0 + room_size * 17.0,
+            ],
+            [
+                4.7 + room_size * 8.6,
+                10.2 + room_size * 13.4,
+                18.1 + room_size * 18.2,
+            ],
+        ];
+        for channel in 0..2 {
+            for tap in 0..3 {
+                let frames = (rate * milliseconds[channel][tap] * 0.001).round() as usize;
+                self.delays[channel][tap] =
+                    frames.clamp(1, REFLECTION_BUFFER_FRAMES - 1);
+            }
+        }
+    }
+
+    #[inline]
+    fn read_delay(&self, channel: usize, delay: usize) -> f32 {
+        self.delay_buffers[channel]
+            [(self.write_index + REFLECTION_BUFFER_FRAMES - delay)
+                & (REFLECTION_BUFFER_FRAMES - 1)]
+    }
+
+    #[inline]
+    pub(super) fn process_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.direct_gain +=
+            self.smoothing * (self.target_direct_gain - self.direct_gain);
+        self.reflection_gain +=
+            self.smoothing * (self.target_reflection_gain - self.reflection_gain);
+
+        let input = [left, right];
+        let mut output = [0.0; 2];
+        let mut sent_level = 0.0_f32;
+        let reflections_enabled = self.reflection_gain > 0.000001
+            || self.target_reflection_gain > 0.000001;
+
+        for channel in 0..2 {
+            let filtered = if self.direct_filter_enabled {
+                self.direct_filters[channel].tick(input[channel])
+            } else {
+                input[channel]
+            };
+            let direct = filtered * self.direct_gain;
+
+            if reflections_enabled {
+                let first = self.read_delay(channel, self.delays[channel][0]);
+                let second = self.read_delay(channel, self.delays[channel][1]);
+                let third = self.read_delay(channel, self.delays[channel][2]);
+                let feedback = (first * FEEDBACK_WEIGHTS[0]
+                    + second * FEEDBACK_WEIGHTS[1]
+                    + third * FEEDBACK_WEIGHTS[2])
+                    * self.feedback_gain;
+                let feedback = self.feedback_filters[channel].tick(feedback);
+                self.delay_buffers[channel][self.write_index] =
+                    (direct + feedback).clamp(-2.0, 2.0);
+
+                let reflected = (first * REFLECTION_GAINS[0]
+                    + second * REFLECTION_GAINS[1]
+                    + third * REFLECTION_GAINS[2])
+                    * self.reflection_gain;
+                output[channel] = (direct + reflected).clamp(-1.0, 1.0);
+                sent_level = sent_level.max(direct.abs());
+            } else {
+                output[channel] = direct.clamp(-1.0, 1.0);
+            }
+        }
+
+        if reflections_enabled {
+            self.write_index =
+                (self.write_index + 1) & (REFLECTION_BUFFER_FRAMES - 1);
+        }
+        self.tail_level = (self.tail_level * 0.99995).max(sent_level);
+        (output[0], output[1])
+    }
+
+    pub(super) fn is_quiet(&self) -> bool {
+        self.tail_level < 0.0005
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -93,6 +93,132 @@ impl<G: ProceduralGenerator> ProceduralGenerator for AcousticGenerator<G> {
     }
 }
 
+
+/// Controls distance, obstruction, and the surrounding acoustic space for a generated sound.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EnvironmentalAcousticsConfig {
+    /// Normalized source distance: 0.0 is nearby and 1.0 is far away.
+    pub distance: f32,
+    /// Normalized obstruction between source and listener: 0.0 is clear and 1.0 is heavily occluded.
+    pub occlusion: f32,
+    /// Normalized room size: 0.0 disables reflections and 1.0 selects the longest early delays.
+    pub room_size: f32,
+    /// Normalized high-frequency absorption: 0.0 is reflective and 1.0 is heavily damped.
+    pub absorption: f32,
+    /// Reflected-signal level: 0.0 is dry and 1.0 is the strongest supported reflection mix.
+    pub wet: f32,
+}
+
+impl Default for EnvironmentalAcousticsConfig {
+    fn default() -> Self {
+        Self {
+            distance: 0.0,
+            occlusion: 0.0,
+            room_size: 0.0,
+            absorption: 0.5,
+            wet: 0.0,
+        }
+    }
+}
+
+impl EnvironmentalAcousticsConfig {
+    fn validate(self) -> Result<(), ProceduralError> {
+        validate_unit(self.distance)?;
+        validate_unit(self.occlusion)?;
+        validate_unit(self.room_size)?;
+        validate_unit(self.absorption)?;
+        validate_unit(self.wet)
+    }
+}
+
+/// Applies reusable distance, occlusion, and room response to any procedural generator.
+///
+/// The processor preserves stereo, uses fixed-size delay state, and does not allocate while
+/// rendering. The wrapped generator and processor retain state across arbitrary render blocks.
+pub struct EnvironmentalAcoustics<G> {
+    inner: G,
+    sample_rate: u32,
+    config: EnvironmentalAcousticsConfig,
+    processor: super::acoustics::EnvironmentProcessor,
+}
+
+impl<G: ProceduralGenerator> EnvironmentalAcoustics<G> {
+    /// Wrap a procedural source in an environmental response at the source's sample rate.
+    pub fn new(
+        inner: G,
+        sample_rate: u32,
+        config: EnvironmentalAcousticsConfig,
+    ) -> Result<Self, ProceduralError> {
+        validate_rate(sample_rate)?;
+        config.validate()?;
+        let processor = super::acoustics::EnvironmentProcessor::new(
+            sample_rate,
+            config.distance,
+            config.occlusion,
+            config.room_size,
+            config.absorption,
+            config.wet,
+        );
+        Ok(Self {
+            inner,
+            sample_rate,
+            config,
+            processor,
+        })
+    }
+
+    /// Return the current environmental parameters.
+    pub fn config(&self) -> EnvironmentalAcousticsConfig {
+        self.config
+    }
+
+    /// Update the environmental response without replacing the source or its delay state.
+    ///
+    /// Direct and reflection gains are smoothed over a short interval. Filter cutoffs and
+    /// reflection timing are recalculated immediately; gradual updates are preferable for
+    /// moving sources or continuous room transitions.
+    pub fn set_config(
+        &mut self,
+        config: EnvironmentalAcousticsConfig,
+    ) -> Result<(), ProceduralError> {
+        config.validate()?;
+        self.processor.configure(
+            self.sample_rate,
+            config.distance,
+            config.occlusion,
+            config.room_size,
+            config.absorption,
+            config.wet,
+        );
+        self.config = config;
+        Ok(())
+    }
+
+    /// Recover the wrapped source.
+    pub fn into_inner(self) -> G {
+        self.inner
+    }
+}
+
+impl<G: ProceduralGenerator> ProceduralGenerator for EnvironmentalAcoustics<G> {
+    fn render(&mut self, output: &mut [f32]) -> Result<(), ProceduralError> {
+        super::validate_output(output)?;
+        self.inner.render(output)?;
+        let (frames, _) = output.as_chunks_mut::<2>();
+        for frame in frames {
+            let (left, right) = self.processor.process_frame(frame[0], frame[1]);
+            frame[0] = left;
+            frame[1] = right;
+        }
+        Ok(())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.inner.is_finished() && self.processor.is_quiet()
+    }
+}
+
+
 struct AcousticTexture {
     rng: Rng,
     low_noise: super::acoustics::OnePole,
@@ -824,6 +950,128 @@ mod tests {
         assert!(samples
             .iter()
             .all(|sample| sample.is_finite() && sample.abs() <= 1.0));
+    }
+
+
+    #[test]
+    fn environmental_acoustics_default_is_bit_exact_passthrough() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let source = || super::super::ImpactGenerator::new(config, 0xE11A).unwrap();
+        let mut dry = source();
+        let mut neutral = EnvironmentalAcoustics::new(
+            source(),
+            config.sample_rate,
+            EnvironmentalAcousticsConfig::default(),
+        )
+        .unwrap();
+        let dry_samples = render(&mut dry, 24_000);
+        let neutral_samples = render(&mut neutral, 24_000);
+        assert_eq!(dry_samples, neutral_samples);
+        assert!(neutral.is_finished());
+    }
+
+    #[test]
+    fn environmental_distance_and_occlusion_reduce_direct_energy() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let source = || super::super::ImpactGenerator::new(config, 0xD157).unwrap();
+        let mut dry = source();
+        let mut distant = EnvironmentalAcoustics::new(
+            source(),
+            config.sample_rate,
+            EnvironmentalAcousticsConfig {
+                distance: 0.9,
+                occlusion: 0.8,
+                ..EnvironmentalAcousticsConfig::default()
+            },
+        )
+        .unwrap();
+        let dry_samples = render(&mut dry, 18_000);
+        let distant_samples = render(&mut distant, 18_000);
+        let energy = |samples: &[f32]| {
+            samples.iter().map(|sample| sample * sample).sum::<f32>()
+        };
+        assert!(energy(&distant_samples) < energy(&dry_samples) * 0.2);
+        bounded(&distant_samples);
+    }
+
+    #[test]
+    fn environmental_reflections_are_deterministic_across_render_blocks_and_keep_a_tail() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let environment = EnvironmentalAcousticsConfig {
+            room_size: 1.0,
+            absorption: 0.2,
+            wet: 0.85,
+            ..EnvironmentalAcousticsConfig::default()
+        };
+        let make = || {
+            EnvironmentalAcoustics::new(
+                super::super::ImpactGenerator::new(config, 0xCA7E).unwrap(),
+                config.sample_rate,
+                environment,
+            )
+            .unwrap()
+        };
+        let mut whole = make();
+        let mut split = make();
+        let expected = render(&mut whole, 36_000);
+        let mut actual = render(&mut split, 1_337);
+        actual.extend(render(&mut split, 8_191));
+        actual.extend(render(&mut split, 26_472));
+        assert_eq!(expected, actual);
+        assert!(expected[18_240 * 2..]
+            .iter()
+            .any(|sample| sample.abs() > 0.00001));
+        bounded(&expected);
+        assert!(!whole.is_finished());
+        render(&mut whole, 220_000);
+        assert!(whole.is_finished());
+    }
+
+    #[test]
+    fn environmental_configuration_updates_and_rejects_invalid_values() {
+        let config = ImpactConfig {
+            sample_rate: 48_000,
+            ..ImpactConfig::default()
+        };
+        let mut generator = EnvironmentalAcoustics::new(
+            super::super::ImpactGenerator::new(config, 0x51A7).unwrap(),
+            config.sample_rate,
+            EnvironmentalAcousticsConfig::default(),
+        )
+        .unwrap();
+        let updated = EnvironmentalAcousticsConfig {
+            distance: 0.5,
+            occlusion: 0.25,
+            room_size: 0.6,
+            absorption: 0.4,
+            wet: 0.5,
+        };
+        generator.set_config(updated).unwrap();
+        assert_eq!(generator.config(), updated);
+        assert!(matches!(
+            generator.set_config(EnvironmentalAcousticsConfig {
+                wet: f32::NAN,
+                ..updated
+            }),
+            Err(ProceduralError::InvalidParameter)
+        ));
+        assert!(matches!(
+            EnvironmentalAcoustics::new(
+                super::super::ImpactGenerator::new(config, 1).unwrap(),
+                1_000,
+                EnvironmentalAcousticsConfig::default(),
+            ),
+            Err(ProceduralError::InvalidSampleRate)
+        ));
     }
 
     #[test]

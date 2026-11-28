@@ -34,6 +34,9 @@ pub mod prelude {
     };
     pub use crate::preset::{MusicPace, MusicPreset};
     pub use crate::procedural::{realistic, retro};
+    pub use crate::procedural::realistic::{
+        EnvironmentalAcoustics, EnvironmentalAcousticsConfig,
+    };
     pub use crate::procedural::{
         BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
         CharacterActionGenerator, CharacterActionKind, CharacterVocalizationConfig,
