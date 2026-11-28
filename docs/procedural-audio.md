@@ -449,7 +449,7 @@ recognizable hardware detail.
 
 ## Building a procedural audition pack
 
-The `procedural_audition` and `procedural_realistic_audition` examples render the complete Retro and Realistic family sets to standalone WAV files so their profiles can be compared outside a game or audio device. It covers surface footsteps, generic impacts, all weapon-contact kinds, breakage materials, damage effects, nonverbal vocalizations, character movement, weapon handling, equipment movement, object interactions, tool actions, mechanical actions, wind, and rain.
+The `procedural_audition` and `procedural_realistic_audition` examples render the complete Retro and Realistic family sets to standalone WAV files so their profiles can be compared outside a game or audio device. They cover surface footsteps, generic impacts, all weapon-contact kinds, breakage materials, damage effects, nonverbal vocalizations, character movement, weapon handling, equipment movement, object interactions, tool actions, mechanical actions, wind, and rain.
 
 Run it without enabling Bevy:
 
