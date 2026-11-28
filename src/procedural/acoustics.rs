@@ -177,6 +177,7 @@ pub(super) struct EnvironmentProcessor {
     target_reflection_gain: f32,
     feedback_gain: f32,
     smoothing: f32,
+    tail_release: f32,
     tail_level: f32,
 }
 
@@ -205,6 +206,7 @@ impl EnvironmentProcessor {
             target_reflection_gain: 0.0,
             feedback_gain: 0.0,
             smoothing: 1.0 - (-1.0 / (rate * 0.025)).exp(),
+            tail_release: (-1.0 / (rate * 0.3)).exp(),
             tail_level: 0.0,
         };
         processor.configure(sample_rate, distance, occlusion, room_size, absorption, wet);
@@ -329,7 +331,7 @@ impl EnvironmentProcessor {
                 (self.write_index + 1) & (REFLECTION_BUFFER_FRAMES - 1);
             self.frames_since_enable = self.frames_since_enable.saturating_add(1);
         }
-        self.tail_level = (self.tail_level * 0.9999).max(sent_level);
+        self.tail_level = (self.tail_level * self.tail_release).max(sent_level);
         (output[0], output[1])
     }
 
