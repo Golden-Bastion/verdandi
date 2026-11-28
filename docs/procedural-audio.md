@@ -1,8 +1,45 @@
 # Procedural sound generation
 
-Verdandi provides deterministic, engine-independent procedural generators for game audio: effects and environmental sounds that complement the music engine. Its scope includes reusable gameplay sound concepts such as footsteps, weapon impacts and clashes, material response, character actions, destruction, and environmental ambience. The built-in generators include wind, rain, generic and surface-specific footsteps, generic impacts, weapon-contact sounds, material-specific breakage, non-vocal character movement effects, weapon draw/sheathe/reload handling, and cloth/gear/armor movement; additional families are tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28).
+Verdandi provides two deterministic, engine-independent procedural sound sets for effects and environmental sounds. The Retro set preserves the original stylized generators and their seeded output. The parallel Realistic set adds acoustic texture to the existing families and uses dedicated material-contact synthesis for footsteps and weapon handling. Both sets cover the same reusable gameplay concepts: wind, rain, footsteps, impacts, breakage, character actions and vocalizations, weapon/equipment handling, object interactions, tools, and mechanisms.
 
 Generators render interleaved stereo floating-point PCM into caller-owned buffers. Generation is separate from playback: use an `AudioClip` for finite sounds and the bounded stream API for continuous environments. The consuming game decides when a sound occurs and how it relates to game entities; Verdandi provides the reusable sound-generation behavior without depending on that game's event or world model.
+
+## Choosing the Retro or Realistic sound set
+
+The original generators remain available unchanged through `verdandi::procedural::retro`. Existing top-level names such as `FootstepGenerator` and `WeaponHandlingGenerator` remain available and retain their original constructors and output; they are the original Retro implementations.
+
+Use `verdandi::procedural::realistic` for the matching Realistic family names. The realistic footstep generator builds a damped contact body and material-shaped friction; shallow water adds a broadband splash, water displacement, and independently timed droplets. The realistic weapon-handling generator uses action-specific scabbard friction and short fitting contacts. Other realistic families wrap the original event shape in deterministic broadband acoustic texture and a short decay tail.
+
+The Realistic set is still synthesized audio, not recordings or a complete physical simulation. The two audition packs are intended to make the difference easy to compare:
+
+```sh
+cargo run --release --no-default-features --example procedural_audition
+cargo run --release --no-default-features --example procedural_realistic_audition
+```
+
+A side-by-side footstep example:
+
+```rust
+use verdandi::prelude::{FootstepConfig, FootstepSurface, ProceduralGenerator};
+use verdandi::procedural::{realistic, retro};
+
+let config = FootstepConfig::default();
+let seed = 0x5eed;
+
+let mut retro_step =
+    retro::FootstepGenerator::new_for_surface(config, FootstepSurface::ShallowWater, seed)?;
+let mut realistic_step =
+    realistic::FootstepGenerator::new_for_surface(config, FootstepSurface::ShallowWater, seed)?;
+
+let mut retro_pcm = vec![0.0; 48_000 * 2 / 2];
+let mut realistic_pcm = vec![0.0; 48_000 * 2 / 2];
+retro_step.render(&mut retro_pcm)?;
+realistic_step.render(&mut realistic_pcm)?;
+```
+
+For other families, the realistic variants use the same configuration type and constructor shape as their Retro counterpart. The generic `realistic::AcousticGenerator` adapter is also public for applying the acoustic-texture layer to a custom implementation of `ProceduralGenerator`.
+
+---
 
 ## Generating a finite effect
 
@@ -412,7 +449,7 @@ recognizable hardware detail.
 
 ## Building a procedural audition pack
 
-The `procedural_audition` example renders the built-in generators to standalone WAV files so their profiles can be compared outside a game or audio device. It covers surface footsteps, generic impacts, all weapon-contact kinds, breakage materials, damage effects, nonverbal vocalizations, character movement, weapon handling, equipment movement, object interactions, tool actions, mechanical actions, wind, and rain.
+The `procedural_audition` and `procedural_realistic_audition` examples render the complete Retro and Realistic family sets to standalone WAV files so their profiles can be compared outside a game or audio device. They cover surface footsteps, generic impacts, all weapon-contact kinds, breakage materials, damage effects, nonverbal vocalizations, character movement, weapon handling, equipment movement, object interactions, tool actions, mechanical actions, wind, and rain.
 
 Run it without enabling Bevy:
 
@@ -420,10 +457,11 @@ Run it without enabling Bevy:
 cargo run --release --no-default-features --example procedural_audition
 ```
 
-The default output directory is `target/audition-pack`. To choose another directory and base seed:
+The Retro default output directory is `target/retro-audition-pack`; the Realistic pack uses `target/realistic-audition-pack`. Both accept a custom directory and base seed:
 
 ```sh
-cargo run --release --no-default-features --example procedural_audition -- ./my-audition-pack 1234
+cargo run --release --no-default-features --example procedural_audition -- ./my-retro-pack 1234
+cargo run --release --no-default-features --example procedural_realistic_audition -- ./my-realistic-pack 1234
 ```
 
 The example uses 48 kHz stereo, signed 16-bit PCM WAV for every file. Finite generators are rendered until they report completion; wind and rain are each rendered for five seconds using one persistent generator instance. Each file gets a deterministic seed derived from the supplied base seed and its position in the export sequence. The generated README lists each file, profile, and seed.
@@ -478,7 +516,7 @@ Generation is not intended to run in the playback callback. Although rendering i
 | `WindGenerator` | Continuous | intensity, brightness |
 | `RainGenerator` | Continuous | density, brightness, intensity |
 
-These are initial sound-design building blocks, not a closed catalogue of supported effects. The first expansion now covers nonverbal voice fallback, specialized combat contacts, generic tool actions, and common hinge/lock mechanisms. Further specialized assets or event profiles should be added where real integration needs justify them. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. Their output may be stylized; do not claim physical accuracy without evidence.
+Each family is available through both `procedural::retro` and `procedural::realistic`. These are sound-design building blocks, not a closed catalogue of supported effects. The first expansion now covers nonverbal voice fallback, specialized combat contacts, generic tool actions, and common hinge/lock mechanisms. Further specialized assets or event profiles should be added where real integration needs justify them. Shared controls should express useful sound-design properties such as material, force, size, resonance, intensity, and deterministic variation where appropriate. The Retro set is intentionally stylized. The Realistic set adds material-shaped cues and acoustic texture, but does not claim physically accurate simulation.
 
 
 ## Application independence

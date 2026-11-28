@@ -211,8 +211,13 @@ Status: **In progress**
 - [x] Add deterministic non-vocal blood-splatter and bone-break effects with force and size controls.
 - [x] Add deterministic chopping, digging, scraping, and sawing effects with target-material, force, weight, and speed controls.
 - [x] Complete the initial generator expansion with specialized shield/armor/projectile contacts, blunt-trauma damage, nonverbal synthetic character vocalizations, and hinge/latch/lock/crank actions (tracked in [issue #28](https://github.com/Golden-Bastion/verdandi/issues/28)).
+- [x] Preserve all original procedural generators in the explicit `procedural::retro` family set without changing their constructors or seeded output.
+- [x] Add a parallel `procedural::realistic` family set, with a deterministic acoustic-texture layer for the existing families.
+- [x] Replace the shallow-water footstep profile with a layered splash/displacement/droplet model in the Realistic set.
+- [x] Replace the Realistic weapon draw/sheathe pitch sweep with material-colored scabbard friction and discrete fitting contacts.
+- [x] Add complete Retro and Realistic WAV audition-pack examples for direct comparison.
 
-**Current boundary:** procedural generators render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. The initial generators are stylized and centered in stereo; they do not claim physically accurate simulation or advanced spatialization.
+**Current boundary:** both sound sets render PCM outside the playback callback. Finite sounds can be wrapped in `AudioClip`; continuous output can be written to the existing bounded `StreamBuffer`. Retro remains intentionally stylized. Realistic adds material-specific cues and acoustic texture, but it is still synthesis rather than recorded or physically accurate audio. Audition and tune the Realistic profiles before treating them as accepted production-quality assets.
 
 
 ## Game-audio direction

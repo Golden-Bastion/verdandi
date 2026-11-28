@@ -6,6 +6,11 @@
 use crate::rng::{derive_seed, Rng};
 use std::f32::consts::TAU;
 
+/// Acoustically enhanced procedural sound family set.
+pub mod realistic;
+/// Original stylized procedural sound family set.
+pub mod retro;
+
 /// Lowest supported procedural generator sample rate.
 pub const MIN_PROCEDURAL_SAMPLE_RATE: u32 = 8_000;
 /// Highest supported procedural generator sample rate.

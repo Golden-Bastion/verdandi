@@ -21,6 +21,9 @@ pub mod sound;
 pub mod synth;
 pub mod theory;
 
+/// Selectable procedural sound families (retro and realistic-style).
+pub use procedural::{realistic, retro};
+
 #[cfg(feature = "bevy-plugin")]
 pub mod plugin;
 
@@ -30,6 +33,7 @@ pub mod prelude {
         Engine, InstrumentConfig, MusicConfig, MusicShared, MusicStatus, MusicStinger,
     };
     pub use crate::preset::{MusicPace, MusicPreset};
+    pub use crate::procedural::{realistic, retro};
     pub use crate::procedural::{
         BreakageConfig, BreakageGenerator, BreakageMaterial, CharacterActionConfig,
         CharacterActionGenerator, CharacterActionKind, CharacterVocalizationConfig,

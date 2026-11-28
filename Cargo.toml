@@ -1,6 +1,6 @@
 [package]
 name = "verdandi"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["right-ward"]
@@ -44,6 +44,9 @@ name = "sfz_audition"
 
 [[example]]
 name = "procedural_audition"
+
+[[example]]
+name = "procedural_realistic_audition"
 
 [[example]]
 name = "demo"
