@@ -54,7 +54,7 @@ All controls are normalized to `0.0..=1.0`:
 
 Use `set_config` to update a moving source or a changing environment without replacing the generator. Direct and reflection gains transition smoothly; filter cutoffs and reflection timings update immediately, so gradual host-side parameter changes are preferable for continuous movement. `is_finished` includes the environmental tail, allowing finite sources to finish after their reflections have decayed.
 
-The processor preserves stereo and uses a fixed delay buffer prepared with the generator. Rendering performs no allocation or I/O. It is a compact early-reflection model, not convolution reverb, geometric ray tracing, or a substitute for authored impulse responses. The Realistic audition pack includes distant, occluded, small-room, and cavern comparisons.
+The processor preserves stereo and uses 8,192 frames of delay storage per channel (64 KiB total) prepared with the generator. Rendering performs no allocation or I/O. It is a compact early-reflection model, not convolution reverb, geometric ray tracing, or a substitute for authored impulse responses. The Realistic audition pack includes distant, occluded, small-room, and cavern comparisons.
 
 ## Choosing the Retro or Realistic sound set
 

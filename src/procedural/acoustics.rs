@@ -318,7 +318,7 @@ impl EnvironmentProcessor {
                         + third * REFLECTION_GAINS[2],
                 ) * self.reflection_gain;
                 output[channel] = (direct + reflected).clamp(-1.0, 1.0);
-                sent_level = sent_level.max(direct.abs());
+                sent_level = sent_level.max(direct.abs() * self.reflection_gain);
             } else {
                 output[channel] = direct.clamp(-1.0, 1.0);
             }
