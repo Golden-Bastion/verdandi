@@ -164,7 +164,12 @@ acoustic_family!(EquipmentMovementGenerator, EquipmentMovementGenerator, Equipme
 acoustic_family!(ObjectInteractionGenerator, ObjectInteractionGenerator, ObjectInteractionConfig, 8);
 acoustic_family!(DamageEffectGenerator, DamageEffectGenerator, DamageEffectConfig, 9);
 acoustic_family!(ToolActionGenerator, ToolActionGenerator, ToolActionConfig, 10);
-acoustic_family!(CharacterVocalizationGenerator, CharacterVocalizationGenerator, CharacterVocalizationConfig, 11);
+acoustic_family!(
+    CharacterVocalizationGenerator,
+    CharacterVocalizationGenerator,
+    CharacterVocalizationConfig,
+    11
+);
 acoustic_family!(MechanicalActionGenerator, MechanicalActionGenerator, MechanicalActionConfig, 12);
 
 const WATER_DROPLETS: usize = 7;
@@ -357,7 +362,7 @@ impl ProceduralGenerator for FootstepGenerator {
                 let friction = high
                     * body_envelope
                     * self.texture_gain
-                    * (0.78 + self.brightness * 0.55);
+                    * (0.65 + self.brightness * 0.70);
                 let body = low * body_envelope * self.body_gain;
                 let modes = (mode_a + mode_b * 0.55) * body_envelope * self.mode_gain;
                 let granular = if matches!(
