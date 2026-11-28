@@ -27,6 +27,13 @@ impl OnePole {
         self.state += self.coefficient * (input - self.state);
         self.state
     }
+
+    /// Returns the filter's current internal state for diagnostics and future DSP composition.
+    #[allow(dead_code)]
+    #[inline]
+    pub(super) fn state(&self) -> f32 {
+        self.state
+    }
 }
 
 /// A stable second-order resonator with a controllable exponential decay time.
@@ -144,6 +151,6 @@ mod tests {
         for _ in 0..1_000 {
             assert!(filter.tick(1.0).is_finite());
         }
-        assert!(filter.state <= 1.0);
+        assert!(filter.state() <= 1.0);
     }
 }
