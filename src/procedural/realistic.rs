@@ -94,7 +94,7 @@ impl AcousticTexture {
             envelope: 0.0,
             previous: 0.0,
             attack: 1.0 - (-1.0 / (rate * 0.004)).exp(),
-            release: 1.0 - (-1.0 / (rate * 0.075)).exp(),
+            release: 1.0 - (-1.0 / (rate * 0.040)).exp(),
             amount,
         }
     }
@@ -124,7 +124,7 @@ impl AcousticTexture {
     }
 
     fn is_quiet(&self) -> bool {
-        self.envelope < 0.0001
+        self.envelope < 0.001
     }
 }
 
